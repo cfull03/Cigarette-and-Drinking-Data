@@ -1,8 +1,3 @@
-# 0) Optional snapshot
-(git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git add -A && git commit -m "chore: snapshot before reorg") || true
-
-# 1) Create bootstrap script
-cat > bootstrap_repo.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
