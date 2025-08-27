@@ -1,0 +1,77 @@
+type: integer
+required: false
+min: 0
+max: 120
+
+education_level:
+type: category
+required: false
+allowed: [less_than_high_school, high_school, some_college, bachelors, masters, doctorate, other]
+
+employment_status:
+type: category
+required: false
+allowed: [employed, unemployed, student, retired, not_in_labor_force]
+
+annual_income_usd:
+type: number
+required: false
+min: 0
+max: 10000000
+
+smokes_per_day:
+type: number
+required: false
+min: 0
+max: 100
+
+drinks_per_week:
+type: number
+required: false
+min: 0
+max: 100
+
+age_started_smoking:
+type: number
+required: false
+min: 5
+max: 100
+
+bmi:
+type: number
+required: false
+min: 5
+max: 80
+
+sleep_hours:
+type: number
+required: false
+min: 0
+max: 24
+
+therapy_history:
+type: category
+required: false
+allowed: [yes, no]
+
+mental_health_status:
+type: category
+required: false
+allowed: [none, mild, moderate, severe]
+
+survey_date:
+type: date
+required: false
+format: "%Y-%m-%d"
+min: "2010-01-01"
+max: "2025-12-31"
+
+state:
+type: string
+required: false
+regex: "^[A-Z]{2}$"
+
+notes:
+type: string
+required: false
+max_len: 500
