@@ -1,0 +1,18 @@
+
+# File: configs/default.yaml
+project_name: cig_drink
+random_state: 42
+
+paths:
+  data_dir: data
+  raw: data/raw/updated_cigarette_drinking_data.csv
+  interim_dir: data/interim
+  processed_dir: data/processed
+  external_dir: data/external
+  sample_input: data/sample/sample_100_rows.csv
+  schema: configs/schema.yaml
+  reports_dir: reports
+
+# No models yet; this file only centralizes paths and basic knobs used by
+# validation/cleaning/notebooks. Add a `model:` section later when you start training.
+

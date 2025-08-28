@@ -1,77 +1,33 @@
-type: integer
-required: false
-min: 0
-max: 120
+# File: configs/schema.yaml
+columns:
+  id:                 {type: integer, required: true,  min: 1}
+  name:               {type: string,  required: true,  max_len: 100}
+  age:                {type: integer, required: true,  min: 0,  max: 120}
+  gender:             {type: category, required: true,  allowed: [Female, Male, Other]}
+  country:            {type: string,  required: true}
+  city:               {type: string,  required: true}
 
-education_level:
-type: category
-required: false
-allowed: [less_than_high_school, high_school, some_college, bachelors, masters, doctorate, other]
+  education_level:    {type: category, allowed: [Primary, Secondary, High School, College, University, Postgraduate, None]}
+  employment_status:  {type: category, allowed: [Employed, Retired, Self-Employed, Student, Unemployed]}
+  annual_income_usd:  {type: integer, min: 0,  max: 1000000}
+  marital_status:     {type: category, allowed: [Single, Married, Divorced, Widowed, "In a relationship"]}
+  children_count:     {type: integer, min: 0,  max: 10}
 
-employment_status:
-type: category
-required: false
-allowed: [employed, unemployed, student, retired, not_in_labor_force]
+  smokes_per_day:           {type: integer, min: 0,  max: 100}
+  drinks_per_week:          {type: integer, min: 0,  max: 100}
+  age_started_smoking:      {type: integer, min: 5,  max: 100}
+  age_started_drinking:     {type: integer, min: 5,  max: 100}
+  attempts_to_quit_smoking: {type: integer, min: 0,  max: 100}
+  attempts_to_quit_drinking:{type: integer, min: 0,  max: 100}
 
-annual_income_usd:
-type: number
-required: false
-min: 0
-max: 10000000
+  has_health_issues:   {type: boolean}
+  mental_health_status:{type: category, allowed: [Good, Average, Poor]}
+  exercise_frequency:  {type: category, allowed: [Daily, Weekly, Rarely, Never]}
+  diet_quality:        {type: category, allowed: [Good, Average, Poor]}
+  sleep_hours:         {type: number,  min: 0,  max: 24}
+  bmi:                 {type: number,  min: 5,  max: 80}
+  social_support:      {type: category, allowed: [Strong, Moderate, Weak, None]}
+  therapy_history:     {type: category, allowed: [None, Past, Current]}
 
-smokes_per_day:
-type: number
-required: false
-min: 0
-max: 100
-
-drinks_per_week:
-type: number
-required: false
-min: 0
-max: 100
-
-age_started_smoking:
-type: number
-required: false
-min: 5
-max: 100
-
-bmi:
-type: number
-required: false
-min: 5
-max: 80
-
-sleep_hours:
-type: number
-required: false
-min: 0
-max: 24
-
-therapy_history:
-type: category
-required: false
-allowed: [yes, no]
-
-mental_health_status:
-type: category
-required: false
-allowed: [none, mild, moderate, severe]
-
-survey_date:
-type: date
-required: false
-format: "%Y-%m-%d"
-min: "2010-01-01"
-max: "2025-12-31"
-
-state:
-type: string
-required: false
-regex: "^[A-Z]{2}$"
-
-notes:
-type: string
-required: false
-max_len: 500
+primary_key: [id]
+min_rows: 1
