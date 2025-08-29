@@ -1,6 +1,0 @@
-# Centralized I/O paths for the project
-raw_dir: data/raw
-interim_dir: data/interim
-processed_dir: data/processed
-models_dir: models
-reports_dir: reports
