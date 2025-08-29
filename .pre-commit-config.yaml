@@ -1,0 +1,33 @@
+# File: .pre-commit-config.yaml
+# Run quick, local quality checks and auto-fixes BEFORE code reaches CI.
+# Install once:  pip install pre-commit
+# Enable:        pre-commit install
+# Run now:       pre-commit run --all-files
+
+repos:
+  # Lightweight hygiene checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+
+  # Ruff: linter (finds unused imports/vars, errors; can autofix many)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  # Black: opinionated formatter
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+        args: ["--line-length=100"]

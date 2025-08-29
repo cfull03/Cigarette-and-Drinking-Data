@@ -1,51 +1,51 @@
 # File: Makefile
-# Usage: make <target>
-# Shell and common variables
 SHELL := /bin/bash
 PYTHON ?= python
-PIP ?= pip
+PIP ?= $(PYTHON) -m pip
 CONFIG ?= configs/default.yaml
 SCHEMA ?= configs/schema.yaml
 INPUT ?=
-KERNEL ?= cig_drink
+# auto-detect package module
+MODULE ?= $(shell if [ -d src/addiction_ds ]; then echo addiction_ds; elif [ -d src/cig_drink ]; then echo cig_drink; else echo cig_drink; fi)
+KERNEL ?= $(MODULE)
 
-.PHONY: help setup install precommit env lint format test validate clean
+.PHONY: help venv install env format lint test validate clean
 
 help:
-	@echo "Targets: setup install precommit env lint format test validate clean"
-	@echo "Vars: CONFIG=$(CONFIG) SCHEMA=$(SCHEMA) INPUT=$(INPUT) KERNEL=$(KERNEL)"
+	@echo "Targets: venv install env format lint test validate clean"
+	@echo "Vars: MODULE=$(MODULE) CONFIG=$(CONFIG) SCHEMA=$(SCHEMA) INPUT=$(INPUT)"
 
-setup: install precommit
+# optional: create .venv to avoid mixing Anaconda/base with project deps
+venv:
+	$(PYTHON) -m venv .venv && . .venv/bin/activate && python -m pip install -U pip setuptools wheel
 
 install:
-	$(PYTHON) -m pip install -U pip setuptools wheel
+	$(PIP) install -U pip setuptools wheel
 	$(PIP) install -e '.[dev]'
 
-precommit:
-	pre-commit install || true
-
 env:
-	# Why: reproducible notebook kernel name for this project
 	$(PYTHON) -m ipykernel install --user --name=$(KERNEL) || true
-
-lint:
-	ruff check .
-	black --check .
 
 format:
 	black .
-	ruff check --fix .
+
+lint:
+	ruff check .
 
 test:
-	pytest -q
+	@if [ -d tests ] && (find tests -type f -name "test_*.py" -o -name "*_test.py" | grep -q .); then \
+		pytest -q ; \
+	else \
+		echo "No tests found in ./tests — skipping" ; \
+	fi
 
-# Validate CSV against schema/default; use INPUT to override auto path selection
 validate:
 	@if [ -n "$(INPUT)" ]; then \
-		$(PYTHON) -m cig_drink.validate --config $(CONFIG) --schema $(SCHEMA) --input "$(INPUT)"; \
+		$(PYTHON) -m $(MODULE).validate --config $(CONFIG) --schema $(SCHEMA) --input "$(INPUT)"; \
 	else \
-		$(PYTHON) -m cig_drink.validate --config $(CONFIG) --schema $(SCHEMA); \
+		$(PYTHON) -m $(MODULE).validate --config $(CONFIG) --schema $(SCHEMA); \
 	fi
 
 clean:
-	rm -rf .pytest_cache .ruff_cache build dist **/__pycache__ *.egg-info
+	rm -rf .ruff_cache .pytest_cache build dist *.egg-info
+	find . -type d -name "__pycache__" -prune -exec rm -rf {} +

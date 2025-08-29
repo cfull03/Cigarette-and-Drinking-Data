@@ -1,0 +1,42 @@
+name: CI - Lint, Clean & Validate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-clean-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install project (editable) + dev tools
+        run: |
+          python -m pip install -U pip setuptools wheel
+          python -m pip install -e '.[dev]'
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Format check (black)
+        run: black --check .
+
+      - name: Clean workspace
+        run: make clean
+
+      - name: Validate data
+        run: make validate

@@ -1,64 +1,51 @@
-# .gitignore for Cigarette-and-Drinking-Data
-
-```gitignore
-# --- OS / Editors ---
+# OS / Editors
 .DS_Store
+._*
 Thumbs.db
-.idea/
 .vscode/
+.idea/
 
-# --- Python ---
+# Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
 *.so
-*.egg-info/
-.eggs/
-.Python
-build/
-dist/
-pip-wheel-metadata/
-
-# --- Environments & secrets ---
 .venv/
-venv/
-env/
-*.env
 .env
 .env.*
+.python-version
 
-# --- Testing / tooling caches ---
+# Build & packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.whl
+
+# Tool caches
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .tox/
+.nox/
 .coverage
-coverage.xml
+.coverage.*
+htmlcov/
+.pyre/
+.pytype/
 
-# --- Notebooks ---
-*.ipynb_checkpoints
+# Jupyter
+**/.ipynb_checkpoints/
 
-# --- Logs ---
-logs/
-*.log
-
-# --- Data & models (keep samples) ---
-# Ignore all data by default, but keep sample data and README placeholder
-/data/*
-!/data/README.md
-!/data/sample/
+# Data & outputs
+/data/**
 !/data/sample/**
+!/data/README.md
+!/data/.gitkeep
 
-# Ignore all models; keep README
-/models/*
-!/models/README.md
+/models/**
+!/models/.gitkeep
 
-# Reports (figures are generated)
-/reports/figures/*
-!/reports/figures/.gitkeep
-
-# --- Misc ---
-# If you later add DVC, DO NOT ignore .dvc/; it should be tracked
-# *.dvc  # keep tracked if created
-```
+/reports/figures/**
+!/reports/README.md
+!/reports/.gitkeep
