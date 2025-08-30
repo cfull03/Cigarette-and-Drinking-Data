@@ -49,3 +49,25 @@ validate:
 clean:
 	rm -rf .ruff_cache .pytest_cache build dist *.egg-info
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +
+
+# --- Remote helpers ---
+# Auto-detect <owner>/<repo> from current origin URL (works for HTTPS or SSH)
+REPO ?= $(shell git config --get remote.origin.url | awk -F'[:/]' '/github.com/{print $$4"/"$$5}' | sed 's/\.git$$//')
+
+.PHONY: use-ssh use-https show-remote
+
+# Switch origin to SSH (avoids workflow token scope issues)
+use-ssh:
+	@if [ -z "$(REPO)" ]; then echo "Could not detect repo from remote.origin.url"; exit 1; fi
+	git remote set-url origin git@github.com:$(REPO).git
+	git remote -v
+
+# Switch origin back to HTTPS
+use-https:
+	@if [ -z "$(REPO)" ]; then echo "Could not detect repo from remote.origin.url"; exit 1; fi
+	git remote set-url origin https://github.com/$(REPO).git
+	git remote -v
+
+# Show remotes
+show-remote:
+	git remote -v

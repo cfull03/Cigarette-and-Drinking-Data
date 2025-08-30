@@ -1,3 +1,4 @@
+# File: .gitignore
 # OS / Editors
 .DS_Store
 ._*
@@ -37,7 +38,7 @@ htmlcov/
 # Jupyter
 **/.ipynb_checkpoints/
 
-# Data & outputs
+# Data & outputs (keep only tiny samples)
 /data/**
 !/data/sample/**
 !/data/README.md

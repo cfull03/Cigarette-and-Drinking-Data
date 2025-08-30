@@ -1,8 +1,9 @@
 # File: .pre-commit-config.yaml
-# Run quick, local quality checks and auto-fixes BEFORE code reaches CI.
-# Install once:  pip install pre-commit
-# Enable:        pre-commit install
-# Run now:       pre-commit run --all-files
+# Local auto-fixes + fast checks before CI.
+# Setup:
+#   python -m pip install pre-commit
+#   pre-commit install
+#   pre-commit run --all-files
 
 repos:
   # Lightweight hygiene checks
@@ -18,16 +19,38 @@ repos:
       - id: check-added-large-files
         args: ["--maxkb=500"]
 
-  # Ruff: linter (finds unused imports/vars, errors; can autofix many)
+  # Ruff: linter (finds unused imports/vars, common errors). Auto-fix what it can.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
+    rev: v0.12.1
     hooks:
       - id: ruff
         args: ["--fix"]
 
-  # Black: opinionated formatter
+  # Black: formatter (Python files)
   - repo: https://github.com/psf/black
     rev: 25.1.0
     hooks:
       - id: black
         args: ["--line-length=100"]
+
+  # Strip output from notebooks to keep diffs small
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
+        files: ".*\.ipynb$"
+
+  # Run ruff/black on notebooks via nbqa
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.8.7
+    hooks:
+      - id: nbqa-ruff
+        name: nbqa-ruff (notebooks)
+        files: ".*\.ipynb$"
+        args: ["--select=E,F,I,UP,B", "--ignore=E501"]
+        additional_dependencies: ["ruff==0.12.11"]
+      - id: nbqa-black
+        name: nbqa-black (notebooks)
+        files: ".*\.ipynb$"
+        args: ["--line-length=100"]
+        additional_dependencies: ["black==25.1.0"]
