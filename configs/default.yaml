@@ -2,10 +2,93 @@ project_name: addiction_ds
 random_state: 42
 
 paths:
+  # Base data folder
   data_dir: data
+
+  # Source CSV (file)
   raw: data/raw/addiction_population_data.csv
+
+  # Where samples are written (dir)
+  sample_dir: data/sample
+
+  # Optional fallback input if raw is absent (file)
   sample_input: data/sample/sample_100_rows.csv
+
+  # Pipelines
   interim_dir: data/interim
   processed_dir: data/processed
+
+  # Reports
   reports_dir: reports
+  figures_dir: reports/figures
+
+  # Validation schema
   schema: configs/schema.yaml
+
+# -------------------- Cleaning config (dynamic) --------------------
+cleaning:
+  # Normalize column NAMES (strip, lowercase, spaces->underscores, &->and)
+  normalize_columns: true
+
+  # Text sanitization for ALL string-like columns (covers new features automatically)
+  text:
+    enable: true
+    columns: null              # null => auto-detect all string/object columns
+    exclude: []                # e.g., ["email", "id"] to skip specific columns
+    normalize_unicode: NFKC    # unicode normalization
+    collapse_whitespace: true  # collapse internal whitespace
+    strip_quotes: true         # remove surrounding quotes
+    remove_control_chars: true # remove control/zero-width chars
+
+  # Optional: set an index if present (noop if column missing)
+  index_col: id
+
+  # Cast these to categorical if present
+  categories:
+    - gender
+    - marital_status
+    - mental_health_status
+    - education_level
+    - employment_status
+    - exercise_frequency
+    - diet_quality
+    - social_support
+    - therapy_history
+
+  # Income engineering (optional)
+  income:
+    col: annual_income_usd
+    round_to: 1000
+    qcut: [0.0, 0.05, 0.25, 0.5, 0.75, 0.9, 1.0]
+    labels: ["Bottom 5%", "Bottom 25%", "Bottom 50%", "Top 50%", "Top 25%", "Top 10%"]
+    feature: salary_percentile
+
+  # Age bins (optional) — use string 'inf' markers for YAML safety
+  age:
+    col: age
+    bins: ["-inf", 18, 30, 60, "inf"]
+    labels: ["Teenager", "Young Adult", "Middle Age Adult", "Elder"]
+    feature: age_group
+
+  # Sleep adequacy (optional)
+  sleep:
+    hours_col: sleep_hours
+    threshold: 8
+    feature: adequate_sleep
+
+  # NA imputations (all optional) — only run when columns exist
+  imputations:
+    - target: education_level
+      by: [salary_percentile, employment_status, annual_income_usd]
+      method: mode
+    - target: social_support
+      by: [family_status, marital_status, children_count]
+      method: mode
+    - target: therapy_history
+      by: [mental_health_status, social_support, employment_status]
+      method: mode
+
+  # Final column controls (optional)
+  drop_duplicates_by: []
+  drop_columns: []
+  keep_columns: null
