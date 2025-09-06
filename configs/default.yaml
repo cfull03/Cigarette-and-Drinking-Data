@@ -1,3 +1,4 @@
+# File: configs/default.yaml
 project_name: addiction_ds
 random_state: 42
 
@@ -18,9 +19,10 @@ paths:
   interim_dir: data/interim
   processed_dir: data/processed
 
-  # Reports
+  # Reports & models
   reports_dir: reports
   figures_dir: reports/figures
+  models_dir: models   # NEW: root-level models directory
 
   # Validation schema
   schema: configs/schema.yaml
@@ -35,7 +37,7 @@ cleaning:
     enable: true
     columns: null              # null => auto-detect all string/object columns
     exclude: []                # e.g., ["email", "id"] to skip specific columns
-    normalize_unicode: NFKC    # unicode normalization
+    normalize_unicode: "NFKC"  # quoted for YAML safety
     collapse_whitespace: true  # collapse internal whitespace
     strip_quotes: true         # remove surrounding quotes
     remove_control_chars: true # remove control/zero-width chars

@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import argparse
 import re
+from typing import Any, Dict, Iterable, Tuple
 
 import pandas as pd
 import pandas.api.types as pat
@@ -28,7 +29,7 @@ def _choose_input(cfg: dict, cli_input: Path | None) -> Path:
 
 def _dtype_ok(s: pd.Series, expected: str) -> bool:
     e = expected.lower()
-    if e in {"int", "integer"}:  # bools are treated as ints by pandas
+    if e in {"int", "integer"}:  # pandas treats bool as int-like
         return pat.is_integer_dtype(s) or pat.is_bool_dtype(s)
     if e in {"float", "double", "number", "numeric"}:
         return pat.is_numeric_dtype(s)
@@ -108,6 +109,36 @@ def _validate_col(name: str, s: pd.Series, spec: dict) -> list[str]:
     return errs
 
 
+def _parse_pk(pk_spec: Any) -> Tuple[list[str], bool]:
+    """Return (columns, optional) from schema's primary_key.
+
+    Supports:
+      - "id"
+      - ["id", "source"]
+      - {columns: ["id"], optional: true}
+    """
+    if not pk_spec:
+        return ([], False)
+    # dict form
+    if isinstance(pk_spec, dict):
+        cols = pk_spec.get("columns", [])
+        if isinstance(cols, (str, Path)):
+            cols = [str(cols)]
+        elif isinstance(cols, Iterable):
+            cols = [str(c) for c in cols]
+        else:
+            cols = []
+        optional = bool(pk_spec.get("optional", False))
+        return (cols, optional)
+    # list/tuple/set form
+    if isinstance(pk_spec, (list, tuple, set)):
+        return ([str(c) for c in pk_spec], False)
+    # string form
+    if isinstance(pk_spec, (str, Path)):
+        return ([str(pk_spec)], False)
+    return ([], False)
+
+
 def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
     errors: list[str] = []
     spec_cols: dict[str, dict] = schema.get("columns", {}) or {}
@@ -122,21 +153,31 @@ def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
         if col_spec.get("required") and col not in df.columns:
             errors.append(f"Missing required column: {col}")
 
-    # primary key
-    pk = schema.get("primary_key")
-    if pk:
-        pk_cols = [pk] if isinstance(pk, str) else list(pk)
-        for k in pk_cols:
-            if k not in df.columns:
-                errors.append(f"primary_key column missing: {k}")
-        if not any(e.startswith("primary_key column missing") for e in errors):
+    # primary key (now supports optional)
+    pk_cols, pk_optional = _parse_pk(schema.get("primary_key"))
+    if pk_cols:
+        missing_cols = [c for c in pk_cols if c not in df.columns]
+        if missing_cols:
+            if not pk_optional:
+                for c in missing_cols:
+                    errors.append(f"primary_key column missing: {c}")
+            # optional -> silently skip PK checks if any column absent
+        else:
             subset = df[pk_cols]
-            if subset.isna().any().any():
-                errors.append("primary_key contains nulls")
-            if subset.duplicated().any():
-                errors.append("primary_key contains duplicates")
+            if pk_optional:
+                # Only enforce on rows where PK is fully non-null
+                mask = subset.notna().all(axis=1)
+                if mask.any():
+                    if subset[mask].duplicated().any():
+                        errors.append("primary_key duplicates among non-null rows")
+                # If none non-null, skip silently
+            else:
+                if subset.isna().any().any():
+                    errors.append("primary_key contains nulls")
+                if subset.duplicated().any():
+                    errors.append("primary_key contains duplicates")
 
-    # per-column
+    # per-column validations
     for name, spec in spec_cols.items():
         if name not in df.columns:
             continue

@@ -1,4 +1,5 @@
 # File: .gitignore
+
 # OS / Editors
 .DS_Store
 ._*
@@ -39,14 +40,24 @@ htmlcov/
 **/.ipynb_checkpoints/
 
 # Data & outputs (keep only tiny samples)
+# Ignore all data, then selectively re-include
 /data/**
+!/data/
+!/data/sample/
 !/data/sample/**
 !/data/README.md
 !/data/.gitkeep
 
+# Models (generated): keep dir marker only
 /models/**
+!/models/
 !/models/.gitkeep
 
-/reports/figures/**
+# Reports (generated): keep docs/markers only
+/reports/**
+!/reports/
 !/reports/README.md
 !/reports/.gitkeep
+
+# (Optional) if any notebooks still write to a local 'data/' under notebooks
+notebooks/**/data/**

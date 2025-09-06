@@ -66,5 +66,8 @@ columns:
     type: string
     allowed: [None, Past, Current]
 
-primary_key: [id]
+primary_key:
+  columns: [id]
+  optional: true
+
 min_rows: 1
