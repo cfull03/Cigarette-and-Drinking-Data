@@ -1,30 +1,102 @@
+"""Lightweight CSV validator driven by YAML schema.
+
+Changes:
+- Input discovery now supports directories (`paths.raw_dir`, `paths.sample_dir`, `paths.processed_dir`) and falls back to latest CSV.
+- Respects `nullable:` in schema (treats `nullable: false` as required non-null).
+- Reads CSV with `io.read_kwargs` from `configs/default.yaml` when present.
+"""
 from __future__ import annotations
+
 from pathlib import Path
 import argparse
 import re
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Tuple, List
 
 import pandas as pd
 import pandas.api.types as pat
 import yaml
 
 
+# -------------------------- config helpers --------------------------
+
 def _load_yaml(path: Path) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
+def _is_csv(p: Path) -> bool:
+    return p.is_file() and p.suffix.lower() == ".csv"
+
+
+def _latest_csv_in_dir(d: Path) -> Path | None:
+    if not d or not d.exists() or not d.is_dir():
+        return None
+    files = sorted(d.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return files[0] if files else None
+
+
+def _as_path(x: Any) -> Path | None:
+    if not x:
+        return None
+    return Path(str(x))
+
+
 def _choose_input(cfg: dict, cli_input: Path | None) -> Path:
+    """Pick an input CSV.
+
+    Strategy:
+    1) If CLI path is provided: use file directly; if it's a dir, pick newest CSV inside.
+    2) Try explicit file paths in config: `paths.sample_input`, `paths.raw`.
+    3) Try directories in config: `paths.processed_dir`, `paths.raw_dir`, `paths.sample_dir` (pick newest CSV).
+    4) Fallback to repo defaults: `data/processed`, `data/raw`, `data/sample` (newest CSV).
+    """
+    # 1) CLI override
     if cli_input is not None:
-        return cli_input
+        p = Path(cli_input)
+        if p.is_dir():
+            cand = _latest_csv_in_dir(p)
+            if cand:
+                return cand
+            raise FileNotFoundError(f"No CSV files found in directory: {p}")
+        if _is_csv(p):
+            return p
+        raise FileNotFoundError(f"Input path is not a CSV file: {p}")
+
     paths = (cfg or {}).get("paths", {})
-    for k in ("sample_input", "raw"):
-        val = paths.get(k)
-        if val and Path(val).exists():
-            return Path(val)
+
+    # 2) explicit files
+    for key in ("sample_input", "raw"):
+        p = _as_path(paths.get(key))
+        if p and _is_csv(p):
+            return p
+
+    # 3) configured directories (preference: processed -> raw -> sample)
+    for key in ("processed_dir", "raw_dir", "sample_dir"):
+        d = _as_path(paths.get(key))
+        cand = _latest_csv_in_dir(d) if d else None
+        if cand:
+            return cand
+
+    # 4) repo default folders
+    for d in map(Path, ["data/processed", "data/raw", "data/sample"]):
+        cand = _latest_csv_in_dir(d)
+        if cand:
+            return cand
+
     raise FileNotFoundError(
-        "No usable input CSV. Provide --input or set paths.sample_input/raw in configs/default.yaml."
+        "No usable input CSV. Provide --input or ensure CSV exists under data/processed, data/raw, or data/sample.\n"
+        "Alternatively set one of: paths.sample_input (file), paths.raw (file), paths.processed_dir/raw_dir/sample_dir (dirs) in configs/default.yaml."
     )
+
+
+# -------------------------- dtype & column checks --------------------------
+
+def _is_categorical_dtype(series: pd.Series) -> bool:
+    # Avoid deprecation warnings by checking dtype object
+    try:
+        return pat.is_categorical_dtype(series.dtype)  # type: ignore[arg-type]
+    except Exception:
+        return pat.is_categorical_dtype(series)
 
 
 def _dtype_ok(s: pd.Series, expected: str) -> bool:
@@ -40,8 +112,15 @@ def _dtype_ok(s: pd.Series, expected: str) -> bool:
     if e in {"date", "datetime", "datetime64"}:
         return pat.is_datetime64_any_dtype(s)
     if e in {"category", "categorical"}:
-        return pat.is_categorical_dtype(s) or pat.is_object_dtype(s)
+        return _is_categorical_dtype(s) or pat.is_object_dtype(s)
     return True
+
+
+def _required_non_null(spec: dict) -> bool:
+    # Prefer explicit `nullable`; fall back to `required` for backward compat
+    if "nullable" in spec:
+        return not bool(spec.get("nullable"))
+    return bool(spec.get("required"))
 
 
 def _validate_col(name: str, s: pd.Series, spec: dict) -> list[str]:
@@ -49,7 +128,7 @@ def _validate_col(name: str, s: pd.Series, spec: dict) -> list[str]:
     t = str(spec.get("type", "")).strip().lower()
 
     # required / unique
-    if spec.get("required") and s.isna().any():
+    if _required_non_null(spec) and s.isna().any():
         errs.append(f"{name}: {int(s.isna().sum())} missing values where required")
     if spec.get("unique") and s.duplicated().any():
         errs.append(f"{name}: {int(s.duplicated().sum())} duplicate values present")
@@ -102,14 +181,15 @@ def _validate_col(name: str, s: pd.Series, spec: dict) -> list[str]:
     # allowed categories
     allowed = spec.get("allowed")
     if allowed:
-        invalid = set(pd.Series(s.dropna().unique()).astype(str)) - {str(x) for x in allowed}
+        allowed_str = {str(x) for x in allowed}
+        invalid = set(pd.Series(s.dropna().unique()).astype(str)) - allowed_str
         if invalid:
             errs.append(f"{name}: unexpected categories {sorted(invalid)}")
 
     return errs
 
 
-def _parse_pk(pk_spec: Any) -> Tuple[list[str], bool]:
+def _parse_pk(pk_spec: Any) -> Tuple[List[str], bool]:
     """Return (columns, optional) from schema's primary_key.
 
     Supports:
@@ -119,7 +199,6 @@ def _parse_pk(pk_spec: Any) -> Tuple[list[str], bool]:
     """
     if not pk_spec:
         return ([], False)
-    # dict form
     if isinstance(pk_spec, dict):
         cols = pk_spec.get("columns", [])
         if isinstance(cols, (str, Path)):
@@ -130,14 +209,14 @@ def _parse_pk(pk_spec: Any) -> Tuple[list[str], bool]:
             cols = []
         optional = bool(pk_spec.get("optional", False))
         return (cols, optional)
-    # list/tuple/set form
     if isinstance(pk_spec, (list, tuple, set)):
         return ([str(c) for c in pk_spec], False)
-    # string form
     if isinstance(pk_spec, (str, Path)):
         return ([str(pk_spec)], False)
     return ([], False)
 
+
+# -------------------------- main validation --------------------------
 
 def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
     errors: list[str] = []
@@ -148,12 +227,13 @@ def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
     if isinstance(min_rows, int) and len(df) < min_rows:
         errors.append(f"row count {len(df)} < min_rows {min_rows}")
 
-    # required columns present
+    # required columns present (derive from `nullable` when provided)
     for col, col_spec in spec_cols.items():
-        if col_spec.get("required") and col not in df.columns:
+        required_present = _required_non_null(col_spec)
+        if required_present and col not in df.columns:
             errors.append(f"Missing required column: {col}")
 
-    # primary key (now supports optional)
+    # primary key (supports optional)
     pk_cols, pk_optional = _parse_pk(schema.get("primary_key"))
     if pk_cols:
         missing_cols = [c for c in pk_cols if c not in df.columns]
@@ -161,16 +241,12 @@ def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
             if not pk_optional:
                 for c in missing_cols:
                     errors.append(f"primary_key column missing: {c}")
-            # optional -> silently skip PK checks if any column absent
         else:
             subset = df[pk_cols]
             if pk_optional:
-                # Only enforce on rows where PK is fully non-null
                 mask = subset.notna().all(axis=1)
-                if mask.any():
-                    if subset[mask].duplicated().any():
-                        errors.append("primary_key duplicates among non-null rows")
-                # If none non-null, skip silently
+                if mask.any() and subset[mask].duplicated().any():
+                    errors.append("primary_key duplicates among non-null rows")
             else:
                 if subset.isna().any().any():
                     errors.append("primary_key contains nulls")
@@ -186,6 +262,8 @@ def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
     return (len(errors) == 0, errors)
 
 
+# -------------------------- CLI --------------------------
+
 def cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate CSV against schema/default YAMLs")
     parser.add_argument("--config", type=Path, default=Path("configs/default.yaml"))
@@ -198,14 +276,17 @@ def cli(argv: list[str] | None = None) -> int:
     sch = _load_yaml(args.schema)
     csv_path = _choose_input(cfg, args.input)
 
-    df = pd.read_csv(csv_path)
+    # Respect io.read_kwargs when present
+    read_kwargs = ((cfg.get("io") or {}).get("read_kwargs") or {}) if isinstance(cfg, dict) else {}
+    df = pd.read_csv(csv_path, **read_kwargs)
+
     ok, errs = validate_df(df, sch)
 
     if ok:
         if not args.quiet:
-            print("✅ Validation passed")
+            print(f"✅ Validation passed | file={csv_path}")
         return 0
-    print("❌ Validation failed:")
+    print(f"❌ Validation failed | file={csv_path}")
     for e in errs:
         print(" -", e)
     return 2

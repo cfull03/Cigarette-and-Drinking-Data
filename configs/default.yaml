@@ -1,96 +1,71 @@
 # File: configs/default.yaml
-project_name: addiction_ds
-random_state: 42
+# Minimal, pragmatic project config used by CLI scripts (clean/sample) and data ops.
+# Only the keys you need must be read by your scripts; extra keys are harmless.
 
 paths:
-  # Base data folder
-  data_dir: data
-
-  # Source CSV (file)
-  raw: data/raw/addiction_population_data.csv
-
-  # Where samples are written (dir)
+  raw_dir: data/raw
   sample_dir: data/sample
-
-  # Optional fallback input if raw is absent (file)
-  sample_input: data/sample/sample_100_rows.csv
-
-  # Pipelines
   interim_dir: data/interim
   processed_dir: data/processed
-
-  # Reports & models
   reports_dir: reports
-  figures_dir: reports/figures
-  models_dir: models   # NEW: root-level models directory
 
-  # Validation schema
-  schema: configs/schema.yaml
+io:
+  read_kwargs:
+    low_memory: false
+    encoding: utf-8
+    dtype_backend: numpy_nullable   # pandas 2.x nullable dtypes
+    na_values: ["", "NA", "N/A", "null", "None"]
+  write_kwargs:
+    index: false
+    encoding: utf-8
+    # compression: null  # e.g., {method: gzip}
 
-# -------------------- Cleaning config (dynamic) --------------------
 cleaning:
-  # Normalize column NAMES (strip, lowercase, spaces->underscores, &->and)
-  normalize_columns: true
+  # Column selection/shape
+  keep_columns: []          # if non-empty, select these columns first
+  drop_columns: []          # columns to drop if present
+  rename: {}                # mapping: {old: new}
+  colname_style: snakecase  # one of: none|lower|snakecase
 
-  # Text sanitization for ALL string-like columns (covers new features automatically)
-  text:
-    enable: true
-    columns: null              # null => auto-detect all string/object columns
-    exclude: []                # e.g., ["email", "id"] to skip specific columns
-    normalize_unicode: "NFKC"  # quoted for YAML safety
-    collapse_whitespace: true  # collapse internal whitespace
-    strip_quotes: true         # remove surrounding quotes
-    remove_control_chars: true # remove control/zero-width chars
+  # Row-level
+  drop_duplicates: true
+  drop_rows_all_na: true
+  min_non_na_ratio: 0.0     # drop rows below this non-NA ratio (0.0 disables)
 
-  # Optional: set an index if present (noop if column missing)
-  index_col: id
+  # Value normalization
+  trim_whitespace: true
+  normalize_unicode: true
+  strip_punctuation_columns: false
 
-  # Cast these to categorical if present
-  categories:
-    - gender
-    - marital_status
-    - mental_health_status
-    - education_level
-    - employment_status
-    - exercise_frequency
-    - diet_quality
-    - social_support
-    - therapy_history
+  # Type casting & parsing (applied after rename)
+  dtypes: {}                # {column: dtype}
+  parse_dates: []           # list of date columns
+  bool_mapping: {"yes": true, "no": false, "y": true, "n": false}
 
-  # Income engineering (optional)
-  income:
-    col: annual_income_usd
-    round_to: 1000
-    qcut: [0.0, 0.05, 0.25, 0.5, 0.75, 0.9, 1.0]
-    labels: ["Bottom 5%", "Bottom 25%", "Bottom 50%", "Top 50%", "Top 25%", "Top 10%"]
-    feature: salary_percentile
+  # Missing values handling (generic fallbacks)
+  impute:
+    numeric: median         # mean|median|zero|none
+    categorical: most_frequent  # most_frequent|constant|none
+    constants: {}           # {column: value} overrides
 
-  # Age bins (optional) — use string 'inf' markers for YAML safety
-  age:
-    col: age
-    bins: ["-inf", 18, 30, 60, "inf"]
-    labels: ["Teenager", "Young Adult", "Middle Age Adult", "Elder"]
-    feature: age_group
+  # Outliers (optional; your cleaner may ignore if unimplemented)
+  outliers:
+    method: none            # none|zscore|iqr
+    zscore_threshold: 4.0
+    iqr_k: 1.5
+    columns: []
 
-  # Sleep adequacy (optional)
-  sleep:
-    hours_col: sleep_hours
-    threshold: 8
-    feature: adequate_sleep
+export:
+  stem: auto                # matches `--stem auto` in Makefile
+  suffix: cleaned           # filename suffix when writing outputs
+  subdir: processed         # write under this subdir by default
 
-  # NA imputations (all optional) — only run when columns exist
-  imputations:
-    - target: education_level
-      by: [salary_percentile, employment_status, annual_income_usd]
-      method: mode
-    - target: social_support
-      by: [family_status, marital_status, children_count]
-      method: mode
-    - target: therapy_history
-      by: [mental_health_status, social_support, employment_status]
-      method: mode
+sample:
+  n_default: 100
+  random_state: 1337
 
-  # Final column controls (optional)
-  drop_duplicates_by: []
-  drop_columns: []
-  keep_columns: null
+# References to other configs (optional convenience)
+references:
+  params: configs/params.yaml
+  schema: configs/schema.yaml
+  logging: configs/logging.yaml

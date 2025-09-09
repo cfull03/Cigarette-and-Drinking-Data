@@ -1,0 +1,77 @@
+# File: configs/experiment.yaml (SKLearn-only)
+# =========================================
+# Valid model names:
+# - logistic_regression
+# - random_forest
+# - gradient_boosting
+# - svc
+# - sgd_classifier
+# Deep-learning fields like `epochs`, `batch_size`, `learning_rate` are intentionally absent.
+
+
+framework: sklearn
+
+
+random_state: 42
+
+
+label: "is_smoker" # adjust if different
+
+
+features:
+  numeric: [
+    "age",
+    "annual_income_usd",
+    "sleep_hours",
+    "bmi",
+    "drinks_per_week"
+  ]
+  categorical: [
+    "gender",
+    "education_level",
+    "employment_status",
+    "marital_status",
+    "mental_health_status",
+    "exercise_frequency",
+    "diet_quality",
+    "social_support",
+    "therapy_history",
+    "country",
+    "city"
+  ]
+
+
+paths:
+  raw_csv: "data/raw/addiction_population_data.csv"
+  train_csv: "data/processed/train.csv"
+  val_csv: "data/processed/val.csv"
+  models_dir: "models"
+
+
+split:
+  test_size: 0.2
+  stratify: true
+
+
+preprocessing:
+  impute_numeric: median
+  impute_categorical: most_frequent
+  scale_numeric: true
+  one_hot_encode: true
+
+
+model:
+  name: random_forest
+  params:
+    n_estimators: 300
+    max_depth: null
+    min_samples_split: 2
+    min_samples_leaf: 1
+    n_jobs: -1
+    class_weight: null   # or "balanced" if classes are imbalanced
+
+
+
+metrics:
+  primary: roc_auc
+  quality_gate_auc_min: 0.60
