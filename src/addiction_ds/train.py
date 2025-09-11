@@ -2,17 +2,19 @@
 
 ## File: `src/addiction_ds/train.py`
 from __future__ import annotations
+
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression, SGDClassifier
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
@@ -21,7 +23,7 @@ from sklearn.svm import SVC
 
 # Prefer project IO utilities if available
 try:
-    from addiction_ds.io import load_cfg, save_model, get_paths
+    from addiction_ds.io import get_paths, load_cfg, save_model
 except Exception:  # fallback if helpers not present
     load_cfg = None  # type: ignore
     save_model = None  # type: ignore
@@ -36,18 +38,18 @@ class TrainConfig:
     label: str
     features_numeric: list[str]
     features_categorical: list[str]
-    paths: Dict[str, str]
+    paths: dict[str, str]
     split_test_size: float
     split_stratify: bool
     model_name: str
-    model_params: Dict[str, Any]
+    model_params: dict[str, Any]
 
     @staticmethod
-    def from_yaml(path: str = "configs/experiment.yaml") -> "TrainConfig":
+    def from_yaml(path: str = "configs/experiment.yaml") -> TrainConfig:
         if load_cfg is not None:
             cfg = load_cfg(path)
         else:  # minimal fallback
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)  # type: ignore[name-defined]
 
         return TrainConfig(
@@ -78,7 +80,7 @@ def _most_recent_csv(processed_dir: Path) -> Path | None:
     return files[0] if files else None
 
 
-def _pick_processed_inputs(cfg: TrainConfig) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def _pick_processed_inputs(cfg: TrainConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (train_df, val_df) using the most recent processed CSVs.
 
     Preference order:
@@ -96,7 +98,9 @@ def _pick_processed_inputs(cfg: TrainConfig) -> Tuple[pd.DataFrame, pd.DataFrame
     processed_dir = Path(train_csv).parent if train_csv.parent.name else Path("data/processed")
     newest = _most_recent_csv(processed_dir)
     if newest is None:
-        raise FileNotFoundError(f"No processed CSVs found in {processed_dir} — run your preprocessing first.")
+        raise FileNotFoundError(
+            f"No processed CSVs found in {processed_dir} — run your preprocessing first."
+        )
 
     df = pd.read_csv(newest).drop_duplicates()
 
@@ -105,7 +109,9 @@ def _pick_processed_inputs(cfg: TrainConfig) -> Tuple[pd.DataFrame, pd.DataFrame
         df[cfg.label] = (df["smokes_per_day"].fillna(0) > 0).astype(int)
 
     if cfg.label not in df.columns:
-        raise KeyError(f"Label '{cfg.label}' not found in {newest}. Update configs/experiment.yaml or preprocessing.")
+        raise KeyError(
+            f"Label '{cfg.label}' not found in {newest}. Update configs/experiment.yaml or preprocessing."
+        )
 
     strat = df[cfg.label] if cfg.split_stratify else None
     train_df, val_df = train_test_split(
@@ -118,14 +124,18 @@ def _pick_processed_inputs(cfg: TrainConfig) -> Tuple[pd.DataFrame, pd.DataFrame
 
 
 def _build_preprocessor(numeric: Iterable[str], categorical: Iterable[str]) -> ColumnTransformer:
-    num_pipe = Pipeline([
-        ("impute", SimpleImputer(strategy="median")),
-        ("scale", StandardScaler()),
-    ])
-    cat_pipe = Pipeline([
-        ("impute", SimpleImputer(strategy="most_frequent")),
-        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-    ])
+    num_pipe = Pipeline(
+        [
+            ("impute", SimpleImputer(strategy="median")),
+            ("scale", StandardScaler()),
+        ]
+    )
+    cat_pipe = Pipeline(
+        [
+            ("impute", SimpleImputer(strategy="most_frequent")),
+            ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+        ]
+    )
     return ColumnTransformer(
         transformers=[
             ("num", num_pipe, list(numeric)),
@@ -136,7 +146,7 @@ def _build_preprocessor(numeric: Iterable[str], categorical: Iterable[str]) -> C
     )
 
 
-def _make_estimator(name: str, params: Dict[str, Any], random_state: int):
+def _make_estimator(name: str, params: dict[str, Any], random_state: int):
     if name not in ALLOWED:
         raise ValueError(f"Unsupported model '{name}'. Allowed: {sorted(ALLOWED)}")
 
@@ -160,6 +170,7 @@ def _make_estimator(name: str, params: Dict[str, Any], random_state: int):
 
 # --------------------------- Train ------------------------------------------
 
+
 def main() -> None:
     cfg = TrainConfig.from_yaml()
 
@@ -182,10 +193,12 @@ def main() -> None:
     pre = _build_preprocessor(cfg.features_numeric, cfg.features_categorical)
     est = _make_estimator(cfg.model_name, cfg.model_params, cfg.random_state)
 
-    pipe = Pipeline([
-        ("pre", pre),
-        ("model", est),
-    ])
+    pipe = Pipeline(
+        [
+            ("pre", pre),
+            ("model", est),
+        ]
+    )
     pipe.fit(X_train, y_train)
 
     # Evaluate with probability or decision function
@@ -202,14 +215,26 @@ def main() -> None:
 
     # Save artifacts using project helper if available; else fallback to joblib
     if save_model is not None and get_paths is not None:
-        save_model(pipe, load_cfg("configs/experiment.yaml") if load_cfg else cfg.__dict__, name="latest", framework="sklearn")
+        save_model(
+            pipe,
+            load_cfg("configs/experiment.yaml") if load_cfg else cfg.__dict__,
+            name="latest",
+            framework="sklearn",
+        )
         # timestamped copy
         import time
+
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        save_model(pipe, load_cfg("configs/experiment.yaml") if load_cfg else cfg.__dict__, name=f"{stamp}_{cfg.model_name}", framework="sklearn")
+        save_model(
+            pipe,
+            load_cfg("configs/experiment.yaml") if load_cfg else cfg.__dict__,
+            name=f"{stamp}_{cfg.model_name}",
+            framework="sklearn",
+        )
     else:
         # minimal fallback
         from joblib import dump
+
         models_dir = Path(cfg.paths.get("models_dir", "models"))
         models_dir.mkdir(parents=True, exist_ok=True)
         dump({"pipeline": pipe, "features": X_cols, "label": y_col}, models_dir / "latest.joblib")

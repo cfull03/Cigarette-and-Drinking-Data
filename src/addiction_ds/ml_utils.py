@@ -19,20 +19,18 @@ python -m addiction_ds.ml_utils split \
 """
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Optional, Tuple
 import argparse
+from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
-
 
 DEFAULT_PROCESSED_DIR = Path("data/processed")
 DEFAULT_OUT_TRAIN = DEFAULT_PROCESSED_DIR / "train.csv"
 DEFAULT_OUT_VAL = DEFAULT_PROCESSED_DIR / "val.csv"
 
 
-def _most_recent_csv(directory: Path) -> Optional[Path]:
+def _most_recent_csv(directory: Path) -> Path | None:
     """Return the most-recent CSV in *directory*, or None if none exist."""
     csvs = list(directory.glob("*.csv"))
     if not csvs:
@@ -47,8 +45,8 @@ def split_csv(
     *,
     test_size: float = 0.2,
     random_state: int = 42,
-    stratify_col: Optional[str] = None,
-) -> Tuple[Path, Path]:
+    stratify_col: str | None = None,
+) -> tuple[Path, Path]:
     """Split a single CSV into train/val CSV files without any preprocessing.
 
     Parameters
@@ -115,9 +113,7 @@ def _cli_split(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="python -m addiction_ds.ml_utils",
-        description=(
-            "Split a CSV into train/val (defaults to newest CSV in data/processed)."
-        ),
+        description=("Split a CSV into train/val (defaults to newest CSV in data/processed)."),
     )
 
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -132,9 +128,7 @@ def main() -> None:
     p_split.add_argument(
         "--out-train", default=str(DEFAULT_OUT_TRAIN), help="Output train CSV path"
     )
-    p_split.add_argument(
-        "--out-val", default=str(DEFAULT_OUT_VAL), help="Output val CSV path"
-    )
+    p_split.add_argument("--out-val", default=str(DEFAULT_OUT_VAL), help="Output val CSV path")
     p_split.add_argument("--test-size", type=float, default=0.2)
     p_split.add_argument("--random-state", type=int, default=42)
     p_split.add_argument(

@@ -26,12 +26,13 @@ Conventions
 """
 from __future__ import annotations
 
+import os
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
-import os
-import re
+from typing import Any
 
 # YAML is optional; operate presence-safe if unavailable
 try:
@@ -90,6 +91,7 @@ def find_repo_root(start: str | Path | None = None) -> Path:
 
 # -------------------------- Config & Paths --------------------------
 
+
 def _read_yaml(fp: Path) -> Mapping[str, Any]:
     if not fp.exists() or yaml is None:
         return {}
@@ -97,12 +99,15 @@ def _read_yaml(fp: Path) -> Mapping[str, Any]:
         with fp.open("r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
         from collections.abc import Mapping as _Mapping
+
         return data if isinstance(data, _Mapping) else {}
     except Exception:
         return {}
 
 
-def load_cfg(path: str | Path = "configs/default.yaml", *, start: str | Path | None = None) -> Dict[str, Any]:
+def load_cfg(
+    path: str | Path = "configs/default.yaml", *, start: str | Path | None = None
+) -> dict[str, Any]:
     root = find_repo_root(start)
     p = Path(path)
     cfg_path = p if p.is_absolute() else (root / p)
@@ -125,7 +130,7 @@ class Paths:
     schema: Path
     models_dir: Path
 
-    def as_dict(self) -> Dict[str, Path]:
+    def as_dict(self) -> dict[str, Path]:
         return {
             "raw": self.raw,
             "sample_input": self.sample_input,
@@ -172,7 +177,9 @@ def _paths_from_cfg(cfg: Mapping[str, Any], *, root: Path) -> Paths:
     data_dir = _data_dir(root, cfg)
     return Paths(
         raw=_resolve_under(root, paths.get("raw", data_dir / "raw" / "data.csv")),
-        sample_input=_resolve_under(root, paths.get("sample_input", data_dir / "sample" / "sample.csv")),
+        sample_input=_resolve_under(
+            root, paths.get("sample_input", data_dir / "sample" / "sample.csv")
+        ),
         sample_dir=_resolve_under(root, paths.get("sample_dir", data_dir / "sample")),
         interim_dir=_resolve_under(root, paths.get("interim_dir", data_dir / "interim")),
         processed_dir=_resolve_under(root, paths.get("processed_dir", data_dir / "processed")),
@@ -183,18 +190,19 @@ def _paths_from_cfg(cfg: Mapping[str, Any], *, root: Path) -> Paths:
     )
 
 
-def get_paths(cfg: Dict[str, Any], *, start: str | Path | None = None) -> Dict[str, Path]:
+def get_paths(cfg: dict[str, Any], *, start: str | Path | None = None) -> dict[str, Path]:
     root = find_repo_root(start)
     return _paths_from_cfg(cfg, root=root).as_dict()
 
 
 # --------------------------- CSV helpers ---------------------------
 
+
 def read_csv(path: str | Path, **kwargs: Any) -> pd.DataFrame:
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"CSV not found: {p}")
-    defaults: Dict[str, Any] = dict(encoding="utf-8", low_memory=False)
+    defaults: dict[str, Any] = dict(encoding="utf-8", low_memory=False)
     defaults.update(kwargs)
     return pd.read_csv(p, **defaults)
 
@@ -215,7 +223,7 @@ def _save_versioned(df: pd.DataFrame, out_dir: Path, stem: str, *, index: bool =
 
 def to_interim(
     df: pd.DataFrame,
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     *,
     stem: str,
     index: bool = False,
@@ -227,7 +235,7 @@ def to_interim(
 
 def to_processed(
     df: pd.DataFrame,
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     *,
     stem: str,
     index: bool = False,
@@ -239,7 +247,7 @@ def to_processed(
 
 def write_sample(
     df: pd.DataFrame,
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     *,
     n: int = 100,
     index: bool = False,
@@ -255,9 +263,10 @@ def write_sample(
 
 # --------------------------- Unified Model IO ---------------------------
 
+
 def _infer_framework(obj: Any) -> str:
     """Infer framework for *obj*; returns 'torch' or 'sklearn'."""
-    if _torch is not None and hasattr(obj, "state_dict") and callable(getattr(obj, "state_dict")):
+    if _torch is not None and hasattr(obj, "state_dict") and callable(obj.state_dict):
         # Don't require isinstance to avoid importing nn during cold envs
         return "torch"
     return "sklearn"
@@ -265,13 +274,13 @@ def _infer_framework(obj: Any) -> str:
 
 def save_model(
     obj: Any,
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     *,
     name: str,
-    framework: Optional[str] = None,  # 'sklearn' | 'torch' | None (infer)
-    subdir: Optional[str] = None,
+    framework: str | None = None,  # 'sklearn' | 'torch' | None (infer)
+    subdir: str | None = None,
     compress: int | bool = 3,  # sklearn only
-    metadata: Optional[Dict[str, Any]] = None,  # torch only
+    metadata: dict[str, Any] | None = None,  # torch only
     start: str | Path | None = None,
 ) -> Path:
     """Save a model artifact under `<repo>/models`.
@@ -298,9 +307,11 @@ def save_model(
         if _torch is None:
             raise ImportError("PyTorch is not installed. Install `torch` to save torch models.")
         if not hasattr(obj, "state_dict"):
-            raise TypeError("Expected a torch.nn.Module or object with state_dict() for framework='torch'.")
+            raise TypeError(
+                "Expected a torch.nn.Module or object with state_dict() for framework='torch'."
+            )
         path = base / f"{name}.pt"
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "state_dict": obj.state_dict(),
             "meta": {
                 "created_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -317,11 +328,11 @@ def save_model(
 
 
 def load_model(
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     *,
     name: str,
-    framework: Optional[str] = None,  # 'sklearn' | 'torch' | None (auto by file ext)
-    subdir: Optional[str] = None,
+    framework: str | None = None,  # 'sklearn' | 'torch' | None (auto by file ext)
+    subdir: str | None = None,
     model: Any | None = None,  # torch: provide nn.Module to load into; if None → return state_dict
     map_location: str | Any = "cpu",  # torch
     strict: bool = True,  # torch
@@ -345,12 +356,18 @@ def load_model(
         candidates = [base / f"{name}.joblib", base / f"{name}.pkl", base / f"{name}.pt"]
         path = next((p for p in candidates if p.exists()), None)
         if path is None:
-            raise FileNotFoundError(f"No artifact found for '{name}' in {base} (tried .joblib/.pkl/.pt)")
+            raise FileNotFoundError(
+                f"No artifact found for '{name}' in {base} (tried .joblib/.pkl/.pt)"
+            )
         suffix = path.suffix.lower()
         fw = "sklearn" if suffix in {".joblib", ".pkl"} else "torch"
     else:
         fw = framework.lower()
-        path = base / (f"{name}.pt" if fw == "torch" else (f"{name}.joblib" if joblib is not None else f"{name}.pkl"))
+        path = base / (
+            f"{name}.pt"
+            if fw == "torch"
+            else (f"{name}.joblib" if joblib is not None else f"{name}.pkl")
+        )
         if not path.exists():
             raise FileNotFoundError(f"Artifact not found: {path}")
 
@@ -370,6 +387,10 @@ def load_model(
         if hasattr(model, "load_state_dict"):
             model.load_state_dict(state, strict=strict)
             return model
-        raise TypeError("Provided 'model' has no load_state_dict(...). Pass a torch.nn.Module instance.")
+        raise TypeError(
+            "Provided 'model' has no load_state_dict(...). Pass a torch.nn.Module instance."
+        )
 
-    raise ValueError("framework must be one of {'sklearn','torch'} or None for auto-detect by file extension")
+    raise ValueError(
+        "framework must be one of {'sklearn','torch'} or None for auto-detect by file extension"
+    )

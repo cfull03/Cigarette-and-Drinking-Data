@@ -8,12 +8,14 @@ Covers:
 These tests do NOT depend on your repo's real data; they build temp CSV/CFG/SCHEMA.
 """
 from __future__ import annotations
+
 import csv
+import subprocess
 import sys
 from pathlib import Path
-import subprocess
 
 import pandas as pd
+
 from addiction_ds.validate import validate_df
 
 
@@ -27,11 +29,13 @@ def test_validate_df_pass_basic():
         "primary_key": ["id"],
         "min_rows": 1,
     }
-    df = pd.DataFrame({
-        "id": [1, 2, 3],
-        "group": ["a", "b", "a"],
-        "score": [10.0, 90.5, 42.0],
-    })
+    df = pd.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "group": ["a", "b", "a"],
+            "score": [10.0, 90.5, 42.0],
+        }
+    )
     ok, errs = validate_df(df, schema)
     assert ok, f"expected pass, got: {errs}"
 
@@ -45,13 +49,17 @@ def test_validate_df_fail_missing_and_duplicates():
         "primary_key": ["id"],
         "min_rows": 1,
     }
-    df = pd.DataFrame({
-        "id": [1, 1, None],  # duplicate + null in PK
-        # missing required column "name"
-    })
+    df = pd.DataFrame(
+        {
+            "id": [1, 1, None],  # duplicate + null in PK
+            # missing required column "name"
+        }
+    )
     ok, errs = validate_df(df, schema)
     assert not ok
-    assert any("primary_key contains duplicates" in e for e in errs) or any("duplicates" in e for e in errs)
+    assert any("primary_key contains duplicates" in e for e in errs) or any(
+        "duplicates" in e for e in errs
+    )
     assert any("primary_key contains nulls" in e for e in errs) or any("null" in e for e in errs)
     assert any("Missing required column: name" in e for e in errs)
 

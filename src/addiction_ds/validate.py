@@ -1,26 +1,29 @@
 """Lightweight CSV validator driven by YAML schema.
 
 Changes:
-- Input discovery now supports directories (`paths.raw_dir`, `paths.sample_dir`, `paths.processed_dir`) and falls back to latest CSV.
+- Input discovery supports directories (`paths.raw_dir`, `paths.sample_dir`, `paths.processed_dir`) and falls back to latest CSV.
 - Respects `nullable:` in schema (treats `nullable: false` as required non-null).
 - Reads CSV with `io.read_kwargs` from `configs/default.yaml` when present.
 """
 from __future__ import annotations
 
-from pathlib import Path
 import argparse
 import re
-from typing import Any, Dict, Iterable, Tuple, List
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pandas.api.types as pat
 import yaml
 
+__all__ = ["cli", "validate_df"]
 
 # -------------------------- config helpers --------------------------
 
+
 def _load_yaml(path: Path) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
@@ -28,7 +31,7 @@ def _is_csv(p: Path) -> bool:
     return p.is_file() and p.suffix.lower() == ".csv"
 
 
-def _latest_csv_in_dir(d: Path) -> Path | None:
+def _latest_csv_in_dir(d: Path | None) -> Path | None:
     if not d or not d.exists() or not d.is_dir():
         return None
     files = sorted(d.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -90,6 +93,7 @@ def _choose_input(cfg: dict, cli_input: Path | None) -> Path:
 
 
 # -------------------------- dtype & column checks --------------------------
+
 
 def _is_categorical_dtype(series: pd.Series) -> bool:
     # Avoid deprecation warnings by checking dtype object
@@ -189,7 +193,7 @@ def _validate_col(name: str, s: pd.Series, spec: dict) -> list[str]:
     return errs
 
 
-def _parse_pk(pk_spec: Any) -> Tuple[List[str], bool]:
+def _parse_pk(pk_spec: Any) -> tuple[list[str], bool]:
     """Return (columns, optional) from schema's primary_key.
 
     Supports:
@@ -201,7 +205,7 @@ def _parse_pk(pk_spec: Any) -> Tuple[List[str], bool]:
         return ([], False)
     if isinstance(pk_spec, dict):
         cols = pk_spec.get("columns", [])
-        if isinstance(cols, (str, Path)):
+        if isinstance(cols, str | Path):
             cols = [str(cols)]
         elif isinstance(cols, Iterable):
             cols = [str(c) for c in cols]
@@ -209,14 +213,15 @@ def _parse_pk(pk_spec: Any) -> Tuple[List[str], bool]:
             cols = []
         optional = bool(pk_spec.get("optional", False))
         return (cols, optional)
-    if isinstance(pk_spec, (list, tuple, set)):
+    if isinstance(pk_spec, list | tuple | set):
         return ([str(c) for c in pk_spec], False)
-    if isinstance(pk_spec, (str, Path)):
+    if isinstance(pk_spec, str | Path):
         return ([str(pk_spec)], False)
     return ([], False)
 
 
 # -------------------------- main validation --------------------------
+
 
 def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
     errors: list[str] = []
@@ -263,6 +268,7 @@ def validate_df(df: pd.DataFrame, schema: dict) -> tuple[bool, list[str]]:
 
 
 # -------------------------- CLI --------------------------
+
 
 def cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate CSV against schema/default YAMLs")

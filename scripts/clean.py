@@ -13,19 +13,25 @@ import importlib
 import math
 import os
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any
 
 __all__ = ["main"]
 
 
 # ---------------- CLI ----------------
 
-def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Clean dataset(s) and write outputs")
     p.add_argument("--module", default=os.environ.get("MODULE", "addiction_ds"))
     p.add_argument("--config", default=os.environ.get("CONFIG", "configs/default.yaml"))
-    p.add_argument("--stem", default=os.environ.get("STEM", "auto"), help="'auto' derives from each input filename")
+    p.add_argument(
+        "--stem",
+        default=os.environ.get("STEM", "auto"),
+        help="'auto' derives from each input filename",
+    )
     p.add_argument("--input", "-i", action="append", default=[], help="CSV input path (repeatable)")
     p.add_argument("--glob", action="append", default=[], help="Glob(s), e.g. 'data/raw/*.csv'")
     p.add_argument("--index-col")
@@ -40,6 +46,7 @@ def _parse_args(argv: List[str] | None = None) -> argparse.Namespace:
 
 # ------------- utils -------------
 
+
 def _mode_or_nan(s: Iterable[Any]) -> Any:
     try:
         m = s.mode()
@@ -48,14 +55,14 @@ def _mode_or_nan(s: Iterable[Any]) -> Any:
         return None
 
 
-def _ensure_list(x: Any | None) -> List[Any]:
+def _ensure_list(x: Any | None) -> list[Any]:
     if x is None:
         return []
     return x if isinstance(x, list) else [x]
 
 
-def _gather_inputs(args) -> List[Path]:
-    files: List[Path] = [Path(p) for p in args.input]
+def _gather_inputs(args) -> list[Path]:
+    files: list[Path] = [Path(p) for p in args.input]
     for pat in args.glob:
         for p in Path().glob(pat):
             if p.suffix.lower() == ".csv":
@@ -63,7 +70,7 @@ def _gather_inputs(args) -> List[Path]:
     if not files:
         return []
     seen: set[Path] = set()
-    out: List[Path] = []
+    out: list[Path] = []
     for p in files:
         if p.exists() and p not in seen:
             out.append(p)
@@ -73,7 +80,10 @@ def _gather_inputs(args) -> List[Path]:
 
 # ------ text sanitization ------
 
-def _sanitize_text_series(s, *, pd, norm: str | None, collapse_ws: bool, strip_quotes: bool, remove_ctrl: bool):
+
+def _sanitize_text_series(
+    s, *, pd, norm: str | None, collapse_ws: bool, strip_quotes: bool, remove_ctrl: bool
+):
     s = s.astype("string")
     if norm:
         try:
@@ -103,7 +113,9 @@ def _sanitize_text_columns(df, C, *, pd):
 
     import pandas as pd_  # dtype checks
 
-    targets = [c for c in df.columns if (pd_.api.types.is_string_dtype(df[c]) or df[c].dtype == "object")]
+    targets = [
+        c for c in df.columns if (pd_.api.types.is_string_dtype(df[c]) or df[c].dtype == "object")
+    ]
     if include:
         targets = [c for c in include if c in df.columns]
 
@@ -113,21 +125,39 @@ def _sanitize_text_columns(df, C, *, pd):
         ser = df[c]
         if str(ser.dtype) == "category":
             ser = ser.astype("string")
-            df[c] = _sanitize_text_series(ser, pd=pd, norm=norm, collapse_ws=collapse_ws, strip_quotes=strip_quotes, remove_ctrl=remove_ctrl).astype("category")
+            df[c] = _sanitize_text_series(
+                ser,
+                pd=pd,
+                norm=norm,
+                collapse_ws=collapse_ws,
+                strip_quotes=strip_quotes,
+                remove_ctrl=remove_ctrl,
+            ).astype("category")
         else:
-            df[c] = _sanitize_text_series(ser, pd=pd, norm=norm, collapse_ws=collapse_ws, strip_quotes=strip_quotes, remove_ctrl=remove_ctrl)
+            df[c] = _sanitize_text_series(
+                ser,
+                pd=pd,
+                norm=norm,
+                collapse_ws=collapse_ws,
+                strip_quotes=strip_quotes,
+                remove_ctrl=remove_ctrl,
+            )
     return df
 
 
 # ------------- cleaning -------------
 
-def _clean(df, cfg: Dict[str, Any], *, np, pd):
+
+def _clean(df, cfg: dict[str, Any], *, np, pd):
     C = cfg.get("cleaning", {})
     out = df.copy()
 
     if C.get("normalize_columns", True):
         out.columns = (
-            out.columns.str.strip().str.lower().str.replace(" ", "_", regex=False).str.replace("&", "and", regex=False)
+            out.columns.str.strip()
+            .str.lower()
+            .str.replace(" ", "_", regex=False)
+            .str.replace("&", "and", regex=False)
         )
 
     out = _sanitize_text_columns(out, C, pd=pd)
@@ -161,7 +191,14 @@ def _clean(df, cfg: Dict[str, Any], *, np, pd):
         labels = age.get("labels", [])
         feature = age.get("feature", "age_group")
         if bins and labels and len(labels) == len(bins) - 1:
-            _bins = [(-math.inf if str(b).lower() in {"-inf", "-infinity"} else (math.inf if str(b).lower() in {"inf", "infinity"} else float(b))) for b in bins]
+            _bins = [
+                (
+                    -math.inf
+                    if str(b).lower() in {"-inf", "-infinity"}
+                    else (math.inf if str(b).lower() in {"inf", "infinity"} else float(b))
+                )
+                for b in bins
+            ]
             try:
                 out[feature] = pd.cut(out[age_col], bins=_bins, labels=labels, include_lowest=True)
                 out[feature] = out[feature].astype("category")
@@ -175,8 +212,13 @@ def _clean(df, cfg: Dict[str, Any], *, np, pd):
     if hours_col and hours_col in out.columns:
         try:
             out[feature] = (
-                np.where(pd.to_numeric(out[hours_col], errors="coerce") > threshold, "Adequate Sleep", "Not Adequate Sleep")
-                .astype("string").astype("category")
+                np.where(
+                    pd.to_numeric(out[hours_col], errors="coerce") > threshold,
+                    "Adequate Sleep",
+                    "Not Adequate Sleep",
+                )
+                .astype("string")
+                .astype("category")
             )
         except Exception:
             pass
@@ -222,6 +264,7 @@ def _clean(df, cfg: Dict[str, Any], *, np, pd):
 
 # -------- driver --------
 
+
 def _ensure_dir_compat(io_mod, p) -> None:
     fn = getattr(io_mod, "ensure_dir", None)
     if fn is not None:
@@ -233,7 +276,7 @@ def _ensure_dir_compat(io_mod, p) -> None:
     Path(p).mkdir(parents=True, exist_ok=True)
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
     try:
@@ -249,7 +292,7 @@ def main(argv: List[str] | None = None) -> int:
         print(f"Missing dependency: {exc}", file=sys.stderr)
         return 2
 
-    cfg: Dict[str, Any] = io.load_cfg(args.config)
+    cfg: dict[str, Any] = io.load_cfg(args.config)
 
     C = cfg.setdefault("cleaning", {})
     if args.index_col:
@@ -261,7 +304,8 @@ def main(argv: List[str] | None = None) -> int:
         if args.round_income_to is not None:
             inc["round_to"] = args.round_income_to
         if args.no_qcut:
-            inc["qcut"] = None; inc["labels"] = None
+            inc["qcut"] = None
+            inc["labels"] = None
     if args.age_col:
         C.setdefault("age", {})["col"] = args.age_col
     if args.sleep_hours_col:
@@ -269,7 +313,7 @@ def main(argv: List[str] | None = None) -> int:
     if args.bmi_col:
         C.setdefault("sleep", {})["bmi_col"] = args.bmi_col
 
-    P: Dict[str, Any] = io.get_paths(cfg)
+    P: dict[str, Any] = io.get_paths(cfg)
 
     inputs = _gather_inputs(args)
     if not inputs:
@@ -277,7 +321,10 @@ def main(argv: List[str] | None = None) -> int:
         if not getattr(src, "exists", lambda: False)():
             src = P.get("sample_input")
         if src is None or not getattr(src, "exists", lambda: False)():
-            print("No valid input file found (raw or sample_input), and no --input/--glob provided", file=sys.stderr)
+            print(
+                "No valid input file found (raw or sample_input), and no --input/--glob provided",
+                file=sys.stderr,
+            )
             return 2
         inputs = [Path(src)]
 
