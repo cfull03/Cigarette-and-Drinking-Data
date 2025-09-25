@@ -1,0 +1,256 @@
+# file: config/schema.yaml
+name: Cigarette-and-Drinking-Data
+version: 1.0.0
+rows: 3000
+columns: 25
+fields:
+  - name: id
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 1
+      max: 3000
+
+  - name: name
+    nullable: false
+    type: string
+    max_length: 29
+    stats:
+      missing: 0
+      unique: 2944
+
+  - name: age
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 15
+      max: 79
+
+  - name: gender
+    nullable: false
+    type: string
+    max_length: 6
+    enum:
+      - Other
+      - Male
+      - Female
+    stats:
+      missing: 0
+      unique: 3
+
+  - name: country
+    nullable: false
+    type: string
+    max_length: 28
+    stats:
+      missing: 0
+      unique: 243
+
+  - name: city
+    nullable: false
+    type: string
+    max_length: 17
+    stats:
+      missing: 0
+      unique: 2675
+
+  - name: education_level
+    nullable: false
+    type: string
+    max_length: 12
+    enum:
+      - University
+      - Postgraduate
+      - High School
+      - None
+      - Primary
+      - Secondary
+      - College
+    stats:
+      missing: 0
+      unique: 7
+
+  - name: employment_status
+    nullable: false
+    type: string
+    max_length: 13
+    enum:
+      - Self-Employed
+      - Employed
+      - Unemployed
+      - Student
+      - Retired
+    stats:
+      missing: 0
+      unique: 5
+
+  - name: annual_income_usd
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 560
+      max: 199951
+
+  - name: marital_status
+    nullable: false
+    type: string
+    max_length: 16
+    enum:
+      - Married
+      - Single
+      - In a relationship
+      - Widowed
+      - Divorced
+    stats:
+      missing: 0
+      unique: 5
+
+  - name: children_count
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 0
+      max: 5
+
+  - name: smokes_per_day
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 2
+      max: 21
+
+  - name: drinks_per_week
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 0
+      max: 14
+
+  - name: age_started_smoking
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 10
+      max: 39
+
+  - name: age_started_drinking
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 10
+      max: 39
+
+  - name: attempts_to_quit_smoking
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 0
+      max: 9
+
+  - name: attempts_to_quit_drinking
+    nullable: false
+    type: integer
+    stats:
+      missing: 0
+      min: 0
+      max: 9
+
+  - name: has_health_issues
+    nullable: false
+    type: boolean
+    stats:
+      missing: 0
+      true_count: 1500
+      false_count: 1500
+
+  - name: mental_health_status
+    nullable: false
+    type: string
+    max_length: 7
+    enum:
+      - Good
+      - Poor
+      - Average
+    stats:
+      missing: 0
+      unique: 3
+
+  - name: exercise_frequency
+    nullable: false
+    type: string
+    max_length: 6
+    enum:
+      - Daily
+      - Weekly
+      - Never
+      - Rarely
+    stats:
+      missing: 0
+      unique: 4
+
+  - name: diet_quality
+    nullable: false
+    type: string
+    max_length: 7
+    enum:
+      - Average
+      - Good
+      - Poor
+    stats:
+      missing: 0
+      unique: 3
+
+  - name: sleep_hours
+    nullable: false
+    type: number
+    stats:
+      missing: 0
+      min: 1.5
+      max: 12.6
+
+  - name: bmi
+    nullable: false
+    type: number
+    stats:
+      missing: 0
+      min: 9.1
+      max: 43.9
+
+  - name: social_support
+    nullable: false
+    type: string
+    max_length: 8
+    enum:
+      - None
+      - Moderate
+      - Weak
+      - Strong
+    stats:
+      missing: 0
+      unique: 4
+
+  - name: therapy_history
+    nullable: false
+    type: string
+    max_length: 7
+    enum:
+      - Current
+      - None
+      - Past
+    stats:
+      missing: 0
+      unique: 3
+
+primary_key: [id]
+targets:
+  regression: smokes_per_day
+  classification: has_health_issues

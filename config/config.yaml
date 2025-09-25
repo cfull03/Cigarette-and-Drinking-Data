@@ -1,0 +1,80 @@
+# file: config/config.yaml
+project:
+  name: "Cigarette-and-Drinking-Data"
+  seed: 42
+  run_name: "baseline_rf"
+
+paths:
+  raw_csv: "data/raw/addiction_population_data.csv"   # update if your filename differs
+  processed_dir: "data/processed"
+  models_dir: "models"
+  reports_dir: "reports"
+  figures_dir: "reports/figures"
+
+data:
+  # Update these to match your CSV headers
+  id_column: "id"
+  target_regression: "smokes_per_day"         # numeric target (e.g., cigarettes per day)
+  target_classification: "has_health_issues"  # binary/multi-class label (0/1 or str)
+
+  # Hold-out splits
+  test_size: 0.20
+  validation_size: 0.10
+  stratify_classification: true
+
+  # Optional feature controls
+  drop_columns: ["name", "city"]        # high-cardinality identifiers to drop if present
+  datetime_columns: []                  # list any datetime columns to parse
+  # Auto-infer types by dtype if lists below are empty
+  categorical_columns: []               # override with an explicit list to pin categories
+  numeric_columns: []                   # override with an explicit list to pin numerics
+
+preprocessing:
+  numeric:
+    imputer:
+      strategy: "median"
+    scaler:
+      standardize: true
+      with_mean: false                   # keep sparse-friendly
+  categorical:
+    imputer:
+      strategy: "most_frequent"
+    one_hot:
+      handle_unknown: "ignore"
+      sparse_output: true
+
+models:
+  regression:
+    estimator: "RandomForestRegressor"
+    params:
+      n_estimators: 200
+      max_depth: null
+      n_jobs: -1
+      random_state: 42
+  classification:
+    estimator: "RandomForestClassifier"
+    params:
+      n_estimators: 300
+      max_depth: null
+      class_weight: "balanced"
+      n_jobs: -1
+      random_state: 42
+
+training:
+  shuffle: true
+  n_jobs: -1
+  verbose: 1
+
+evaluation:
+  regression_metrics: ["MAE", "R2"]
+  classification_metrics: ["accuracy", "f1_weighted"]
+  save_plots: true
+  plots:
+    regression_true_vs_pred: "reg_true_vs_pred.png"
+    classification_confusion_matrix: "clf_confusion_matrix.png"
+
+artifacts:
+  metrics_json: "reports/metrics.json"
+  evaluation_json: "reports/evaluation.json"
+  model_regression: "models/${project.run_name}_reg.joblib"
+  model_classification: "models/${project.run_name}_clf.joblib"
