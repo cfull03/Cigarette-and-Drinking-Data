@@ -1,42 +1,87 @@
-name: CI - Lint, Clean & Validate
+# file: pyproject.toml
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+[project]
+name = "cigarette-and-drinking-data"
+version = "0.1.0"
+description = "Config-driven data science pipeline for addiction population dataset."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Christian Fullerton" }]
+license = { text = "MIT" }
+keywords = ["data-science", "ml", "pipeline", "addiction", "health"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
 
-jobs:
-  lint-clean-validate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+dependencies = [
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "scikit-learn>=1.5",
+  "pyyaml>=6.0",
+  "matplotlib>=3.8",
+  "joblib>=1.4",
+  "rich>=13.7"
+]
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+[project.urls]
+Homepage = "https://github.com/cfull03/Cigarette-and-Drinking-Data"
+Issues = "https://github.com/cfull03/Cigarette-and-Drinking-Data/issues"
 
-      - name: Install project (editable) + dev tools
-        run: |
-          python -m pip install -U pip setuptools wheel
-          python -m pip install -e '.[dev]'
+[tool.setuptools]
+package-dir = {"" = "src"}
 
-      - name: Lint (ruff)
-        run: ruff check .
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["addiction*"]
+exclude = ["tests*"]
 
-      - name: Format check (black)
-        run: black --check .
+[tool.setuptools.dynamic]
+# If you later want dynamic versioning, wire it here.
 
-      - name: Clean workspace
-        run: make clean
+# ---------------- Developer Tooling ----------------
 
-      - name: Validate data
-        run: make validate
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311"]
+exclude = '''
+/(
+  \.git
+ | \.venv
+ | build
+ | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+src_paths = ["src", "tests"]
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "W503"]
+exclude = [".git", ".venv", "build", "dist"]
+per-file-ignores = [
+  # tests can be more flexible
+  "tests/*:D",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/addiction"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

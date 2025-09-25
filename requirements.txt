@@ -1,0 +1,8 @@
+# file: requirements.txt
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.5
+pyyaml>=6.0
+matplotlib>=3.8
+joblib>=1.4
+rich>=13.7

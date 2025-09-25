@@ -7,6 +7,7 @@ project:
 paths:
   raw_csv: "data/raw/addiction_population_data.csv"   # update if your filename differs
   processed_dir: "data/processed"
+  interm_dir: "data/interim"
   models_dir: "models"
   reports_dir: "reports"
   figures_dir: "reports/figures"

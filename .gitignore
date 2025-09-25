@@ -1,63 +1,64 @@
-# File: .gitignore
+# file: .gitignore
 
-# OS / Editors
-.DS_Store
-._*
-Thumbs.db
-.vscode/
-.idea/
-
-# Python
+# --- Python ---
 __pycache__/
 *.py[cod]
+*.pyo
 *.so
+*.dylib
+*.egg
+*.egg-info/
+.eggs/
+.dist-info/
+build/
+dist/
+
+# --- Environments & tooling ---
 .venv/
+venv/
 .env
 .env.*
 .python-version
-
-# Build & packaging
-build/
-dist/
-*.egg-info/
-.eggs/
 pip-wheel-metadata/
-*.whl
 
-# Tool caches
+# --- Testing & coverage ---
 .pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.tox/
-.nox/
 .coverage
 .coverage.*
 htmlcov/
-.pyre/
-.pytype/
+.cache/
+.mypy_cache/
 
-# Jupyter
-**/.ipynb_checkpoints/
+# --- Jupyter/Notebooks ---
+.ipynb_checkpoints/
+*.nbconvert.ipynb
 
-# Data & outputs (keep only tiny samples)
-# Ignore all data, then selectively re-include
-/data/**
-!/data/
-!/data/sample/
-!/data/sample/**
-!/data/README.md
-!/data/.gitkeep
+# --- IDE/OS noise ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
 
-# Models (generated): keep dir marker only
-/models/**
-!/models/
-!/models/.gitkeep
+# --- Data artifacts ---
+data/raw/*
+!data/raw/.gitkeep
 
-# Reports (generated): keep docs/markers only
-/reports/**
-!/reports/
-!/reports/README.md
-!/reports/.gitkeep
+data/interim/**
+!data/interim/.gitkeep
 
-# (Optional) if any notebooks still write to a local 'data/' under notebooks
-notebooks/**/data/**
+data/processed/**
+!data/processed/.gitkeep
+
+# --- Models & reports ---
+models/**
+!models/.gitkeep
+
+reports/figures/**
+!reports/figures/.gitkeep
+
+reports/logs/**
+!reports/logs/.gitkeep
+
+# Generated summaries/exports (keep if you want reproducible metrics)
+reports/*.jso*
