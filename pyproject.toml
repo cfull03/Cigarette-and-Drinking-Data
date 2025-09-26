@@ -1,0 +1,101 @@
+# file: pyproject.toml
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cigarette-and-drinking-data"
+version = "0.1.0"
+description = "Config-driven data science pipeline (training, evaluation, prediction) for the addiction dataset."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Your Name" }]
+license = { text = "MIT" }
+keywords = ["data-science", "ml", "pipeline", "tabular", "sklearn"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+dependencies = [
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "scikit-learn>=1.5",
+  "pyyaml>=6.0",
+  "matplotlib>=3.8",
+  "joblib>=1.4",
+  "rich>=13.7"
+]
+
+[project.optional-dependencies]
+# Optional model backends
+xgb = ["xgboost>=1.7"]
+lgbm = ["lightgbm>=4.0"]
+# Dev tools
+dev = [
+  "pytest>=8.2",
+  "coverage[toml]>=7.6",
+  "black>=24.3",
+  "isort>=5.13",
+  "flake8>=7.0",
+  "build>=1.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/cfull03/Cigarette-and-Drinking-Data"
+Issues = "https://github.com/cfull03/Cigarette-and-Drinking-Data/issues"
+
+[project.scripts]
+addiction-train = "addiction.models.train:main"
+addiction-evaluate = "addiction.models.evaluate:main"
+addiction-predict = "addiction.models.predict:main"
+addiction-get-model = "addiction.models.get:main"
+addiction-ingest = "addiction.data.ingest:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["addiction*"]
+exclude = ["tests*"]
+
+# ---------------- Dev Tooling ----------------
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311"]
+exclude = '''
+/(
+  \.git
+ | \.venv
+ | build
+ | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+src_paths = ["src", "tests"]
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "W503"]
+exclude = [".git", ".venv", "build", "dist"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/addiction"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
