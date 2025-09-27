@@ -54,6 +54,7 @@ addiction-evaluate = "addiction.models.evaluate:main"
 addiction-predict = "addiction.models.predict:main"
 addiction-get-model = "addiction.models.get:main"
 addiction-ingest = "addiction.data.ingest:main"
+addiction-watch = "addiction.data.watch:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

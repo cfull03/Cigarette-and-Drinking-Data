@@ -1,0 +1,19 @@
+# file: .dockerignore
+.git
+.venv
+__pycache__/
+*.py[cod]
+*.log
+dist/
+build/
+htmlcov/
+.pytest_cache/
+# Large artifacts (kept via bind mounts)
+data/interm/**
+data/processed/**
+models/**
+reports/**
+!data/interm/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep
+!reports/.gitkeep
