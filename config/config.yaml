@@ -5,18 +5,17 @@ project:
   run_name: "baseline_rf"
 
 paths:
-  raw_csv: "data/raw/addiction_population_data.csv"   # update if your filename differs
+  raw_csv: "data/raw/addiction_population_data.csv" 
   processed_dir: "data/processed"
-  interm_dir: "data/interim"
+  interim_dir: "data/interim"
   models_dir: "models"
   reports_dir: "reports"
   figures_dir: "reports/figures"
 
 data:
-  # Update these to match your CSV headers
   id_column: "id"
-  target_regression: "smokes_per_day"         # numeric target (e.g., cigarettes per day)
-  target_classification: "has_health_issues"  # binary/multi-class label (0/1 or str)
+  target_regression: "smokes_per_day"
+  target_classification: "has_health_issues"
 
   # Hold-out splits
   test_size: 0.20
@@ -24,19 +23,18 @@ data:
   stratify_classification: true
 
   # Optional feature controls
-  drop_columns: ["name", "city"]        # high-cardinality identifiers to drop if present
-  datetime_columns: []                  # list any datetime columns to parse
+  drop_columns: ["name", "city"]
+  datetime_columns: []
   # Auto-infer types by dtype if lists below are empty
-  categorical_columns: []               # override with an explicit list to pin categories
-  numeric_columns: []                   # override with an explicit list to pin numerics
-
+  categorical_columns: []
+  numeric_columns: []
 preprocessing:
   numeric:
     imputer:
       strategy: "median"
     scaler:
       standardize: true
-      with_mean: false                   # keep sparse-friendly
+      with_mean: false
   categorical:
     imputer:
       strategy: "most_frequent"
