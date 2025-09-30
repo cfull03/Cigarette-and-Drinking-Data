@@ -1,34 +1,18 @@
-# File: docker-compose.yml
+# docker-compose.yml (self-contained + persistent artifacts)
 version: "3.9"
+volumes:
+  data: {}
+  reports: {}
+  models: {}
+
 services:
   watcher:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        APP_UID: ${UID:-1000}
-        APP_GID: ${GID:-1000}
-    image: addiction-ds:latest
+    build: .
+    image: cigarette-and-drinking-data:latest
     working_dir: /app
-    user: "${UID:-1000}:${GID:-1000}"
-    command: ["ad-watch","--config","config/config.yaml","--schema","config/schema.yaml","--outliers","iqr","--iqr-k","1.5"]
-    volumes:
-      - ./:/app:delegated
-      - ./data:/app/data
-      - ./config:/app/config
-      - ./reports:/app/reports
-      - ./models:/app/models
     restart: unless-stopped
-
-  ingest-once:
-    image: addiction-ds:latest
-    working_dir: /app
-    user: "${UID:-1000}:${GID:-1000}"
-    command: ["ad-ingest","--config","config/config.yaml","--schema","config/schema.yaml"]
+    command: ["addiction-watch","--config","config/config.yaml","--schema","config/schema.yaml","--outliers","iqr","--iqr-k","1.5"]
     volumes:
-      - ./:/app:delegated
-      - ./data:/app/data
-      - ./config:/app/config
-      - ./reports:/app/reports
-      - ./models:/app/models
-    restart: "no"
+      - data:/app/data
+      - reports:/app/reports
+      - models:/app/models
