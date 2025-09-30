@@ -1,5 +1,3 @@
-# file: Makefile
-
 # -------- Settings --------
 PY ?= python
 VENV ?= .venv
@@ -10,14 +8,31 @@ VENV_PIP := $(VENV_BIN)/pip
 CONFIG ?= config/config.yaml
 RAW ?= $(shell grep -m1 'raw_csv:' $(CONFIG) | awk '{print $$2}')
 
+# Ingest/Watch transform flags
+OUTLIERS ?= iqr
+IQR_K ?= 1.5
+SAVE_CSV ?= 0          # set to 1 to also write CSV
+NO_PARQUET ?= 0        # set to 1 to disable parquet
+
+# Docker
+IMAGE ?= cigarette-and-drinking-data:latest
+COMPOSE ?= docker compose
+
 # -------- Phony --------
-.PHONY: help setup setup-dev install clean train evaluate predict test lint format coverage freeze ingest watch
+.PHONY: help setup setup-dev install clean train evaluate predict test lint format coverage freeze ingest watch \
+        docker-build docker-watch docker-ingest docker-shell docker-logs docker-down
 
 help:
 	@echo "setup        - create venv + install runtime deps"
 	@echo "setup-dev    - create venv + install dev deps"
 	@echo "install      - pip install -e . (uses venv)"
 	@echo "train/evaluate/predict/ingest/watch - pipeline targets"
+	@echo "docker-build - build the image"
+	@echo "docker-watch - run watcher service (compose)"
+	@echo "docker-ingest- run one-off ingest job (compose)"
+	@echo "docker-shell - interactive shell inside image"
+	@echo "docker-logs  - tail watcher logs"
+	@echo "docker-down  - stop services"
 	@echo "test/lint/format/coverage/freeze/clean"
 
 # -------- Environment --------
@@ -34,7 +49,7 @@ setup-dev: $(VENV_BIN)/python
 install: $(VENV_BIN)/python
 	$(VENV_PIP) install -e .
 
-# -------- Pipeline --------
+# -------- Pipeline (venv) --------
 train:
 	$(VENV_BIN)/addiction-train --config $(CONFIG)
 
@@ -45,10 +60,12 @@ predict:
 	$(VENV_BIN)/addiction-predict --config $(CONFIG) --input $(RAW)
 
 ingest:
-	$(VENV_BIN)/addiction-ingest --config $(CONFIG) --schema config/schema.yaml
+	$(VENV_BIN)/addiction-ingest --config $(CONFIG) --schema config/schema.yaml \
+		--outliers $(OUTLIERS) --iqr-k $(IQR_K) $(if $(filter 1,$(SAVE_CSV)),--save-csv) $(if $(filter 1,$(NO_PARQUET)),--no-parquet)
 
 watch:
-	$(VENV_BIN)/addiction-watch --config $(CONFIG) --schema config/schema.yaml
+	$(VENV_BIN)/addiction-watch --config $(CONFIG) --schema config/schema.yaml \
+		--outliers $(OUTLIERS) --iqr-k $(IQR_K) $(if $(filter 1,$(SAVE_CSV)),--save-csv) $(if $(filter 1,$(NO_PARQUET)),--no-parquet)
 
 # -------- Quality --------
 test:
@@ -65,6 +82,25 @@ coverage:
 
 freeze:
 	$(VENV_PIP) freeze > requirements-freeze.txt
+
+# -------- Docker / Compose --------
+docker-build:
+	$(COMPOSE) build
+
+docker-watch:
+	OUTLIERS=$(OUTLIERS) IQR_K=$(IQR_K) SAVE_CSV=$(SAVE_CSV) NO_PARQUET=$(NO_PARQUET) $(COMPOSE) up -d watcher
+
+docker-ingest:
+	OUTLIERS=$(OUTLIERS) IQR_K=$(IQR_K) SAVE_CSV=$(SAVE_CSV) NO_PARQUET=$(NO_PARQUET) $(COMPOSE) run --rm ingest-once
+
+docker-shell:
+	docker run --rm -it -v $$(pwd):/app -w /app $(IMAGE) bash
+
+docker-logs:
+	$(COMPOSE) logs -f watcher
+
+docker-down:
+	$(COMPOSE) down
 
 # -------- Cleanup --------
 clean:
