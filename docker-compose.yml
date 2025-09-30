@@ -1,0 +1,34 @@
+# File: docker-compose.yml
+version: "3.9"
+services:
+  watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_UID: ${UID:-1000}
+        APP_GID: ${GID:-1000}
+    image: addiction-ds:latest
+    working_dir: /app
+    user: "${UID:-1000}:${GID:-1000}"
+    command: ["ad-watch","--config","config/config.yaml","--schema","config/schema.yaml","--outliers","iqr","--iqr-k","1.5"]
+    volumes:
+      - ./:/app:delegated
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./reports:/app/reports
+      - ./models:/app/models
+    restart: unless-stopped
+
+  ingest-once:
+    image: addiction-ds:latest
+    working_dir: /app
+    user: "${UID:-1000}:${GID:-1000}"
+    command: ["ad-ingest","--config","config/config.yaml","--schema","config/schema.yaml"]
+    volumes:
+      - ./:/app:delegated
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./reports:/app/reports
+      - ./models:/app/models
+    restart: "no"

@@ -1,0 +1,24 @@
+# File: .dockerignore
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.ipynb_checkpoints
+.env
+.venv
+venv
+dist
+build
+wheels
+.wheels
+.DS_Store
+# data: keep local, mount in dev
+data/raw/*
+!data/raw/.keep
+data/interim/*
+data/processed/*
+reports/*
+models/*
