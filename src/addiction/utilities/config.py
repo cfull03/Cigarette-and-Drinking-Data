@@ -130,3 +130,4 @@ class Config:
 def load_config(path: str | Path = "config/config.yaml") -> Config:
     """Preferred import for other modules."""
     return Config.load(path)
+
