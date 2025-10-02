@@ -1,0 +1,34 @@
+# =========================================================
+# file: docker-compose.dev.yml  (root of repo; dev-only)
+# Run with: docker compose -f docker-compose.dev.yml up --build
+# =========================================================
+version: "3.9"
+
+volumes:
+  data: {}
+  reports: {}
+  models: {}
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: cigarette-and-drinking-data:dev
+    working_dir: /app
+    ports:
+      - "8888:8888"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # live-edit the code and notebooks
+      - ./:/app
+      # persist artifacts across container restarts
+      - data:/app/data
+      - reports:/app/reports
+      - models:/app/models
+    command: >
+      jupyter lab
+      --ip=0.0.0.0 --port=8888 --no-browser
+      --ServerApp.token= --ServerApp.password=
+      --NotebookApp.notebook_dir=/app/notebooks
