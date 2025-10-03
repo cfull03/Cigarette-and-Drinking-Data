@@ -1,24 +1,19 @@
-# File: .dockerignore
+# =========================================================
+# file: .dockerignore      (NEW: faster, cleaner builds)
+# =========================================================
 .git
 .gitignore
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.swp
-*.ipynb_checkpoints
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+notebooks/
+data/
+reports/
+models/
 .env
-.venv
-venv
-dist
-build
-wheels
-.wheels
-.DS_Store
-# data: keep local, mount in dev
-data/raw/*
-!data/raw/.keep
-data/interim/*
-data/processed/*
-reports/*
-models/*
+.DS_Stor

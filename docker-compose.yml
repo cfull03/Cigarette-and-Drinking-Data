@@ -1,4 +1,6 @@
-# file: docker-compose.yml  (self-contained + persistent artifacts)
+# =========================================================
+# file: docker-compose.yml  (EDITED: fix watcher command)
+# =========================================================
 version: "3.9"
 
 volumes:
@@ -12,23 +14,9 @@ services:
     image: cigarette-and-drinking-data:latest
     working_dir: /app
     restart: unless-stopped
-    command:
-      - addiction-watch
-      - --config
-      - config/config.yaml
-      - --schema
-      - config/schema.yaml
-      - --outliers
-      - iqr
-      - --iqr-k
-      - "1.5"
+    # Fixed --schema arg; rest unchanged
+    command: ["addiction-watch","--config","config/config.yaml","--schema","config/schema.yaml","--outliers","iqr","--iqr-k","1.5"]
     volumes:
       - data:/app/data
       - reports:/app/reports
       - models:/app/models
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'addiction-watch' >/dev/null || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
-

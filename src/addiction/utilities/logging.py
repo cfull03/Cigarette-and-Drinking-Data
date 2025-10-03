@@ -21,7 +21,6 @@ _CONSOLE_HANDLER: Optional[logging.Handler] = None
 
 
 # ---- internals ----
-
 def _level(level: Optional[Union[int, str]]) -> int:
     if level is None:
         return logging.INFO
@@ -31,7 +30,6 @@ def _level(level: Optional[Union[int, str]]) -> int:
 
 
 def _log_dir(cfg: Config) -> Path:
-    # Why: keep logs grouped; avoids cluttering reports root
     d = cfg.paths.reports_dir / "logs"
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -40,7 +38,6 @@ def _log_dir(cfg: Config) -> Path:
 def _setup_handlers(cfg: Config, level: int, to_file: bool) -> None:
     global _CONFIGURED, _FILE_HANDLER, _CONSOLE_HANDLER
     if _CONFIGURED:
-        # Update levels on existing handlers for consistency across calls
         if _CONSOLE_HANDLER:
             _CONSOLE_HANDLER.setLevel(level)
         if _FILE_HANDLER:
@@ -77,7 +74,6 @@ def _setup_handlers(cfg: Config, level: int, to_file: bool) -> None:
 
 
 # ---- public API ----
-
 def get_logger(
     name: str = "addiction",
     cfg: Union[Config, str, Path] = "config/config.yaml",
@@ -115,7 +111,6 @@ def log_exceptions(logger: Optional[logging.Logger] = None) -> Callable[[Callabl
                 fn(*args, **kwargs)
                 return 0
             except SystemExit as se:
-                # Why: preserve intended exit codes
                 code = int(getattr(se, "code", 1) or 0)
                 if code != 0:
                     log.exception("Exited with error code %s", code)

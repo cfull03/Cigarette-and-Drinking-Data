@@ -1,109 +1,51 @@
-# -------- Settings --------
-PY ?= python
-VENV ?= .venv
-VENV_BIN := $(VENV)/bin
-VENV_PY  := $(VENV_BIN)/python
-VENV_PIP := $(VENV_BIN)/pip
+# ================================
+# Makefile (containers-only)
+# ================================
+SHELL := /bin/bash
 
-CONFIG ?= config/config.yaml
-RAW ?= $(shell grep -m1 'raw_csv:' $(CONFIG) | awk '{print $$2}')
+# Compose files
+COMPOSE       ?= docker compose
+DEV_COMPOSE   ?= docker-compose.dev.yml
+PROD_COMPOSE  ?= docker-compose.yml
 
-# Ingest/Watch transform flags
-OUTLIERS ?= iqr
-IQR_K ?= 1.5
-SAVE_CSV ?= 0          # set to 1 to also write CSV
-NO_PARQUET ?= 0        # set to 1 to disable parquet
+# Images
+IMAGE_DEV  ?= cigarette-and-drinking-data:dev
+IMAGE_PROD ?= cigarette-and-drinking-data:latest
 
-# Docker
-IMAGE ?= cigarette-and-drinking-data:latest
-COMPOSE ?= docker compose
+.PHONY: dev up down logs test build ps clean
 
-# -------- Phony --------
-.PHONY: help setup setup-dev install clean train evaluate predict test lint format coverage freeze ingest watch \
-        docker-build docker-watch docker-ingest docker-shell docker-logs docker-down
+## Start Jupyter dev stack (Dockerfile.dev)
+dev:
+	$(COMPOSE) -f $(DEV_COMPOSE) up --build
 
-help:
-	@echo "setup        - create venv + install runtime deps"
-	@echo "setup-dev    - create venv + install dev deps"
-	@echo "install      - pip install -e . (uses venv)"
-	@echo "train/evaluate/predict/ingest/watch - pipeline targets"
-	@echo "docker-build - build the image"
-	@echo "docker-watch - run watcher service (compose)"
-	@echo "docker-ingest- run one-off ingest job (compose)"
-	@echo "docker-shell - interactive shell inside image"
-	@echo "docker-logs  - tail watcher logs"
-	@echo "docker-down  - stop services"
-	@echo "test/lint/format/coverage/freeze/clean"
+## Start production watcher stack (Dockerfile)
+up:
+	$(COMPOSE) -f $(PROD_COMPOSE) up -d --build
 
-# -------- Environment --------
-$(VENV_BIN)/python:
-	$(PY) -m venv $(VENV)
-	$(VENV_PY) -m pip install -U pip
+## Stop production watcher stack
+down:
+	$(COMPOSE) -f $(PROD_COMPOSE) down
 
-setup: $(VENV_BIN)/python
-	$(VENV_PIP) install -e . -r requirements.txt
+## Tail watcher logs
+logs:
+	$(COMPOSE) -f $(PROD_COMPOSE) logs -f watcher
 
-setup-dev: $(VENV_BIN)/python
-	$(VENV_PIP) install -e ".[dev]" -r requirements.txt
-
-install: $(VENV_BIN)/python
-	$(VENV_PIP) install -e .
-
-# -------- Pipeline (venv) --------
-train:
-	$(VENV_BIN)/addiction-train --config $(CONFIG)
-
-evaluate:
-	$(VENV_BIN)/addiction-evaluate --config $(CONFIG)
-
-predict:
-	$(VENV_BIN)/addiction-predict --config $(CONFIG) --input $(RAW)
-
-ingest:
-	$(VENV_BIN)/addiction-ingest --config $(CONFIG) --schema config/schema.yaml \
-		--outliers $(OUTLIERS) --iqr-k $(IQR_K) $(if $(filter 1,$(SAVE_CSV)),--save-csv) $(if $(filter 1,$(NO_PARQUET)),--no-parquet)
-
-watch:
-	$(VENV_BIN)/addiction-watch --config $(CONFIG) --schema config/schema.yaml \
-		--outliers $(OUTLIERS) --iqr-k $(IQR_K) $(if $(filter 1,$(SAVE_CSV)),--save-csv) $(if $(filter 1,$(NO_PARQUET)),--no-parquet)
-
-# -------- Quality --------
+## Run pytest inside the dev container
 test:
-	$(VENV_BIN)/pytest -q
+	$(COMPOSE) -f $(DEV_COMPOSE) run --rm dev pytest -q
 
-lint:
-	$(VENV_BIN)/flake8 src tests
+## Build dev + prod images
+build:
+	docker build -f Dockerfile.dev -t $(IMAGE_DEV) .
+	docker build -f Dockerfile -t $(IMAGE_PROD) .
 
-format:
-	$(VENV_BIN)/isort src tests && $(VENV_BIN)/black src tests
+## Show running services (prod compose)
+ps:
+	$(COMPOSE) -f $(PROD_COMPOSE) ps
 
-coverage:
-	$(VENV_BIN)/coverage run -m pytest && $(VENV_BIN)/coverage report -m
-
-freeze:
-	$(VENV_PIP) freeze > requirements-freeze.txt
-
-# -------- Docker / Compose --------
-docker-build:
-	$(COMPOSE) build
-
-docker-watch:
-	OUTLIERS=$(OUTLIERS) IQR_K=$(IQR_K) SAVE_CSV=$(SAVE_CSV) NO_PARQUET=$(NO_PARQUET) $(COMPOSE) up -d watcher
-
-docker-ingest:
-	OUTLIERS=$(OUTLIERS) IQR_K=$(IQR_K) SAVE_CSV=$(SAVE_CSV) NO_PARQUET=$(NO_PARQUET) $(COMPOSE) run --rm ingest-once
-
-docker-shell:
-	docker run --rm -it -v $$(pwd):/app -w /app $(IMAGE) bash
-
-docker-logs:
-	$(COMPOSE) logs -f watcher
-
-docker-down:
-	$(COMPOSE) down
-
-# -------- Cleanup --------
+## Clean: stop stacks + prune dangling images/build cache (keeps volumes/data)
 clean:
-	find . -name "__pycache__" -type d -prune -exec rm -rf {} + || true
-	find . -name "*.pyc" -o -name "*.pyo" -o -name "*.pyd" -delete || true
-	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage build dist || true
+	-$(COMPOSE) -f $(PROD_COMPOSE) down
+	-$(COMPOSE) -f $(DEV_COMPOSE) down
+	docker image prune -f
+	docker builder prune -f

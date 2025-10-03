@@ -10,10 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Tuple
 
-# ---- version (reads from installed package metadata if available) ----
 try:
     from importlib.metadata import PackageNotFoundError, version  # py3.8+
-except Exception:  # pragma: no cover
+except Exception: 
     from importlib_metadata import PackageNotFoundError, version  # type: ignore
 
 def _resolve_version() -> str:
@@ -27,7 +26,6 @@ def _resolve_version() -> str:
 
 __version__ = _resolve_version()
 
-# ---- convenient re-exports ----
 from .utilities.config import Config, ConfigPath, load_config
 from .utilities.io import (
     read_csv,
@@ -58,11 +56,11 @@ def setup(
 
 __all__ = [
     "__version__",
-    # config
+
     "Config",
     "ConfigPath",
     "load_config",
-    # io
+
     "read_csv",
     "read_json",
     "to_interim",
@@ -72,10 +70,10 @@ __all__ = [
     "save_json",
     "save_text",
     "raw_csv_path",
-    # logging
+
     "get_logger",
     "set_verbosity",
     "log_exceptions",
-    # helpers
+
     "setup",
 ]
