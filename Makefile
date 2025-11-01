@@ -2,7 +2,7 @@
 # GLOBALS                                                                       #
 #################################################################################
 
-PROJECT_NAME = Cigarette-and-Drinking-Data
+PROJECT_NAME = cigarette-and-drinking-data
 PYTHON_VERSION = 3.12
 PYTHON_INTERPRETER = python
 

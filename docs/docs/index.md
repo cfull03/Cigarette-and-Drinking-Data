@@ -1,8 +1,8 @@
-# Health Risk Classification Using Smoking and Demographic Data documentation!
+# Cigarette and Drinking Data documentation!
 
 ## Description
 
-A simple project used to aanalyze cigarette and drinking data
+A repository where we explore with models to find answers with Cigarettes and Drinking
 
 ## Commands
 

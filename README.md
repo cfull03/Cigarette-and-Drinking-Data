@@ -1,10 +1,10 @@
-# Health Risk Classification Using Smoking and Demographic Data
+# Cigarette and Drinking Data
 
 <a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-A simple project used to aanalyze cigarette and drinking data
+A repository where we explore with models to find answers with Cigarettes and Drinking
 
 ## Project Organization
 
