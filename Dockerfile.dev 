@@ -1,0 +1,42 @@
+# =========================================================
+# file: Dockerfile.dev     (NEW: dev image for notebooks/tests)
+# =========================================================
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential git curl ca-certificates tini libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt ./requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel \
+ && pip install -r requirements.txt || true
+
+COPY pyproject.toml ./pyproject.toml
+COPY src ./src
+RUN pip install -e .
+
+RUN pip install "jupyterlab>=4,<5" "jupyter_server>=2" \
+                ipykernel ipywidgets notebook \
+                pytest pytest-cov black ruff \
+ && python -m ipykernel install --name "addiction-py312" --display-name "Python 3.12 (addiction)"
+
+ARG USERNAME=dev USER_UID=1000 USER_GID=1000
+RUN groupadd --gid ${USER_GID} ${USERNAME} \
+ && useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME}
+
+RUN mkdir -p /app/data/raw /app/data/interim /app/data/processed /app/models /app/reports /app/notebooks \
+ && chown -R ${USERNAME}:${USERNAME} /app
+USER ${USERNAME}
+
+EXPOSE 8888
+
+ENTRYPOINT ["/usr/bin/tini","--"]
+CMD jupyter lab --ServerApp.ip=0.0.0.0 --ServerApp.port=8888 --ServerApp.open_browser=False --ServerApp.token= --ServerApp.password= --ServerApp.root_dir=/app/notebooks
+
