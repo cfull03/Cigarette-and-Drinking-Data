@@ -30,3 +30,11 @@ extend-select = ["I"]  # Add import sorting
 known-first-party = ["addiction"]
 force-sort-within-sections = true
 
+[tool.mypy]
+python_version = "3.12"
+strict = false
+
+[[tool.mypy.overrides]]
+module = ["loguru", "typer", "tqdm"]
+ignore_missing_imports = true
+

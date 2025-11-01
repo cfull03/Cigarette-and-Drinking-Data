@@ -13,4 +13,7 @@ ruff
 scikit-learn
 tqdm
 typer
+loguru
+tqdm
+typer
 -e .
