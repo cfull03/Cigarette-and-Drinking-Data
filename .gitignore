@@ -188,16 +188,4 @@ cython_debug/
 .ruff_cache/
 
 # PyPI configuration file
-.pypircdata/**
-!data/.gitkeep
-artifacts/**
-models/**
-mlruns/**
-mlartifacts/**
-__pycache__/
-.ipynb_checkpoints/
-*.joblib
-*.pkl
-*.pt
-*.onnx
-.env
+.pypirc

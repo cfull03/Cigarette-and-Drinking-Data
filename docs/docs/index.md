@@ -1,8 +1,8 @@
-# Cigarette and Drinking Data documentation!
+# Cigarette and Drinking Addition documentation!
 
 ## Description
 
-A repository where we explore with models to find answers with Cigarettes and Drinking
+Simple Ds and ML Project
 
 ## Commands
 

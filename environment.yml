@@ -1,0 +1,22 @@
+name: Cigarette-and-Drinking-Data
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - typer
+  - loguru
+  - tqdm
+  - ipython
+  - jupyterlab
+  - matplotlib
+  - notebook
+  - numpy
+  - pandas
+  - scikit-learn
+  - ruff
+  - pytest
+  - pip:
+    - python-dotenv
+    - mkdocs
+    - -e .
