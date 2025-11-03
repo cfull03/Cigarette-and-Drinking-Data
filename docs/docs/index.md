@@ -1,8 +1,8 @@
-# Cigarette and Drinking Addition documentation!
+# Cigarette and Drinking Data documentation!
 
 ## Description
 
-Simple Ds and ML Project
+Analysis of cigarette and alcohol data
 
 ## Commands
 

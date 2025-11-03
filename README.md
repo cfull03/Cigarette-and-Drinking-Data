@@ -1,10 +1,10 @@
-# Cigarette and Drinking Addition
+# Cigarette and Drinking Data
 
 <a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-Simple Ds and ML Project
+Analysis of cigarette and alcohol data
 
 ## Project Organization
 
@@ -27,7 +27,7 @@ Simple Ds and ML Project
 │                         `1.0-jqp-initial-data-exploration`.
 │
 ├── pyproject.toml     <- Project configuration file with package metadata for 
-│                         addition and configuration for tools like black
+│                         addiction and configuration for tools like black
 │
 ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
 │
@@ -39,9 +39,9 @@ Simple Ds and ML Project
 │
 ├── setup.cfg          <- Configuration file for flake8
 │
-└── addition   <- Source code for use in this project.
+└── addiction   <- Source code for use in this project.
     │
-    ├── __init__.py             <- Makes addition a Python module
+    ├── __init__.py             <- Makes addiction a Python module
     │
     ├── config.py               <- Store useful variables and configuration
     │
