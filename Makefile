@@ -2,7 +2,7 @@
 # GLOBALS                                                                       #
 #################################################################################
 
-PROJECT_NAME = Cigarette-and-Drinking-Data
+PROJECT_NAME = cigarette-and-drinking-data
 PYTHON_VERSION = 3.12
 PYTHON_INTERPRETER = python
 
@@ -64,7 +64,7 @@ create_environment:
 ## Make dataset
 .PHONY: data
 data: requirements
-	$(PYTHON_INTERPRETER) addition/dataset.py
+	$(PYTHON_INTERPRETER) addiction/dataset.py
 
 
 #################################################################################

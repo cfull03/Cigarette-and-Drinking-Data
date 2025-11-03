@@ -1,4 +1,4 @@
-name: Cigarette-and-Drinking-Data
+name: cigarette-and-drinking-data
 channels:
   - conda-forge
 dependencies:

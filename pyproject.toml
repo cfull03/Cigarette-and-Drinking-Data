@@ -3,9 +3,9 @@ requires = ["flit_core >=3.2,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "addition"
+name = "addiction"
 version = "0.0.1"
-description = "Simple Ds and ML Project"
+description = "Analysis of cigarette and alcohol data"
 authors = [
   { name = "Christian Fullerton" },
 ]
@@ -20,13 +20,13 @@ requires-python = "~=3.12.0"
 
 [tool.ruff]
 line-length = 99
-src = ["addition"]
-include = ["pyproject.toml", "addition/**/*.py"]
+src = ["addiction"]
+include = ["pyproject.toml", "addiction/**/*.py"]
 
 [tool.ruff.lint]
 extend-select = ["I"]  # Add import sorting
 
 [tool.ruff.lint.isort]
-known-first-party = ["addition"]
+known-first-party = ["addiction"]
 force-sort-within-sections = true
 
