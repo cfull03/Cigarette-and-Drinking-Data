@@ -1,0 +1,21 @@
+{
+  // --- Python interpreter & terminals ---
+  "python.defaultInterpreterPath": "/Users/christianfullerton/miniforge3/envs/cigarette-and-drinking-data/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.envFile": "${workspaceFolder}/.env",
+
+  // --- Jupyter / Notebooks ---
+  "jupyter.jupyterServerType": "local",
+  "jupyter.kernels.excludePythonEnvironments": false,
+
+  // Optional: help VS Code find your package (addiction/) for imports
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+
+  // Optional: testing defaults (if you use pytest)
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": [
+    "tests"
+  ]
+}

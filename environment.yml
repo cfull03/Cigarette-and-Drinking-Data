@@ -4,19 +4,19 @@ channels:
 dependencies:
   - python=3.12
   - pip
+  - ipykernel
+  - jupyterlab
+  - numpy>=1.26
+  - pandas>=2.2,<3
+  - matplotlib
+  - pyarrow
+  - scikit-learn
   - typer
   - loguru
   - tqdm
-  - ipython
-  - jupyterlab
-  - matplotlib
-  - notebook
-  - numpy
-  - pandas
-  - scikit-learn
   - ruff
   - pytest
+  - mkdocs
+  - python-dotenv
   - pip:
-    - python-dotenv
-    - mkdocs
-    - -e .
+      - -e .
