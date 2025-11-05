@@ -1,28 +1,364 @@
+# filepath: addiction/features.py
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable, Iterable, Optional, Set
 
 from loguru import logger
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
 import typer
 
 from addiction.config import PROCESSED_DATA_DIR
 
-app = typer.Typer()
+app = typer.Typer(help="Feature engineering CLI for the Cigarette & Drinking dataset.")
+features_app = typer.Typer(help="Manage feature specs.")
+app.add_typer(features_app, name="features")
 
 
+# -----------------------------
+# Utilities
+# -----------------------------
+def _mode_safe(s: pd.Series):
+    m = s.mode(dropna=True)
+    return m.iat[0] if not m.empty else np.nan
+
+
+def _has_all(df: pd.DataFrame, cols: Iterable[str]) -> bool:
+    return set(cols).issubset(df.columns)
+
+
+# -----------------------------
+# FeatureSpec & Registry
+# -----------------------------
+class FeatureError(RuntimeError):
+    """Registry or application error."""
+
+
+@dataclass(order=True, frozen=True)
+class FeatureSpec:
+    """
+    Declarative feature specification.
+
+    - `requires`: input columns needed; spec is skipped if missing.
+    - `produces`: columns created/overwritten by this spec.
+    - `order`: coarse ordering across specs.
+    - `enabled`: default on/off; can be overridden via CLI.
+    """
+    order: int
+    name: str = field(compare=False)
+    requires: Set[str] = field(default_factory=set, compare=False)
+    produces: Set[str] = field(default_factory=set, compare=False)
+    func: Callable[[pd.DataFrame], pd.DataFrame] = field(default=None, compare=False)
+    desc: str = field(default="", compare=False)
+    enabled: bool = field(default=True, compare=False)
+
+    def applicable(self, df: pd.DataFrame) -> bool:
+        return _has_all(df, self.requires)
+
+    def apply(self, df: pd.DataFrame) -> pd.DataFrame:
+        if not self.applicable(df):
+            logger.warning(f"[skip:{self.name}] Missing columns: {self.requires - set(df.columns)}")
+            return df
+        try:
+            out = self.func(df)
+            if not isinstance(out, pd.DataFrame):
+                raise FeatureError(f"Feature '{self.name}' must return a DataFrame.")
+            return out
+        except Exception as exc:
+            # Why: keep pipeline running but make failure visible.
+            logger.exception(f"[error:{self.name}] {exc}")
+            return df
+
+
+class FeatureRegistry:
+    def __init__(self):
+        self._specs: dict[str, FeatureSpec] = {}
+
+    def register(self, spec: FeatureSpec) -> FeatureSpec:
+        if spec.name in self._specs:
+            raise FeatureError(f"Duplicate feature name: {spec.name}")
+        self._specs[spec.name] = spec
+        return spec
+
+    def feature(
+        self,
+        name: str,
+        *,
+        requires: Iterable[str] = (),
+        produces: Iterable[str] = (),
+        order: int = 100,
+        desc: str = "",
+        enabled: bool = True,
+    ):
+        def deco(func: Callable[[pd.DataFrame], pd.DataFrame]):
+            spec = FeatureSpec(
+                name=name,
+                requires=set(requires),
+                produces=set(produces),
+                func=func,
+                order=order,
+                desc=desc,
+                enabled=enabled,
+            )
+            self.register(spec)
+            return func
+        return deco
+
+    def names(self) -> list[str]:
+        return sorted(self._specs.keys())
+
+    def get(self, name: str) -> FeatureSpec:
+        try:
+            return self._specs[name]
+        except KeyError:
+            raise FeatureError(f"Unknown feature: {name}")
+
+    def build(
+        self,
+        df: pd.DataFrame,
+        *,
+        only: Optional[Set[str]] = None,
+        exclude: Optional[Set[str]] = None,
+    ) -> pd.DataFrame:
+        specs = list(self._specs.values())
+        specs.sort()  # dataclass(order=True): order then name
+
+        if only:
+            missing = only - set(self._specs)
+            if missing:
+                raise FeatureError(f"`only` includes unknown features: {sorted(missing)}")
+            specs = [s for s in specs if s.name in only]
+        if exclude:
+            unknown = exclude - set(self._specs)
+            if unknown:
+                raise FeatureError(f"`exclude` includes unknown features: {sorted(unknown)}")
+            specs = [s for s in specs if s.name not in exclude]
+
+        out = df.copy()
+        for spec in specs:
+            if not spec.enabled:
+                logger.info(f"[disabled:{spec.name}]")
+                continue
+            out = spec.apply(out)
+        return out
+
+
+REGISTRY = FeatureRegistry()
+
+
+# -----------------------------
+# Feature implementations
+# -----------------------------
+@REGISTRY.feature(
+    name="basic_cleanup",
+    requires=(),
+    produces=(),
+    order=0,
+    desc="Drop 'id'; set index to 'name' (retaining column) if present.",
+)
+def feat_basic_cleanup(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "id" in out.columns:
+        out = out.drop(columns=["id"])
+    if "name" in out.columns:
+        out = out.set_index("name", drop=False)
+    return out
+
+
+@REGISTRY.feature(
+    name="income_features",
+    requires=("annual_income_usd",),
+    produces=("income_band", "log_income", "income_z", "income_decile"),
+    order=10,
+    desc="Bands, log, z-score, and deciles from annual income.",
+)
+def feat_income(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    inc = pd.to_numeric(out["annual_income_usd"], errors="coerce")
+
+    bins = [-np.inf, 25_000, 50_000, 75_000, 100_000, 150_000, np.inf]
+    labels = ["<25k", "25–50k", "50–75k", "75–100k", "100–150k", "150k+"]
+    out["income_band"] = pd.cut(inc, bins=bins, labels=labels, include_lowest=True, right=True)
+
+    out["log_income"] = np.log1p(inc)
+    mu, sigma = inc.mean(), inc.std() or 1.0
+    out["income_z"] = (inc - mu) / sigma
+    try:
+        out["income_decile"] = pd.qcut(inc, 10, labels=False, duplicates="drop")
+    except Exception:
+        out["income_decile"] = np.nan
+    return out
+
+
+@REGISTRY.feature(
+    name="smoke_intensity",
+    requires=("smokes_per_day",),
+    produces=("smoke_intensity",),
+    order=20,
+    desc="Bucketize smoking intensity.",
+)
+def feat_smoke_intensity(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["smoke_intensity"] = pd.cut(
+        out["smokes_per_day"], [0, 1, 5, 10, 20, np.inf],
+        labels=["none", "ultra", "light", "med", "heavy"], include_lowest=True
+    )
+    return out
+
+
+@REGISTRY.feature(
+    name="drink_intensity",
+    requires=("drinks_per_week",),
+    produces=("drink_intensity",),
+    order=20,
+    desc="Bucketize drinking intensity.",
+)
+def feat_drink_intensity(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["drink_intensity"] = pd.cut(
+        out["drinks_per_week"], [0, 1, 7, 14, 28, np.inf],
+        labels=["none", "very_low", "low", "mod", "high"], include_lowest=True
+    )
+    return out
+
+
+@REGISTRY.feature(
+    name="ratios_dependents",
+    requires=("children_count", "annual_income_usd"),
+    produces=("dependents_ratio",),
+    order=30,
+    desc="(children+1)/(income+1) as affordability proxy.",
+)
+def feat_dependents_ratio(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    inc = pd.to_numeric(out["annual_income_usd"], errors="coerce")
+    out["dependents_ratio"] = (out["children_count"].fillna(0) + 1) / (inc.fillna(0) + 1)
+    return out
+
+
+@REGISTRY.feature(
+    name="quit_effort_smoke_norm",
+    requires=("attempts_to_quit_smoking", "smokes_per_day"),
+    produces=("quit_effort_smoke_norm",),
+    order=30,
+    desc="Normalized smoking quit attempts.",
+)
+def feat_quit_smoke(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["quit_effort_smoke_norm"] = out["attempts_to_quit_smoking"] / (out["smokes_per_day"] + 1)
+    return out
+
+
+@REGISTRY.feature(
+    name="quit_effort_drink_norm",
+    requires=("attempts_to_quit_drinking", "drinks_per_week"),
+    produces=("quit_effort_drink_norm",),
+    order=30,
+    desc="Normalized drinking quit attempts.",
+)
+def feat_quit_drink(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["quit_effort_drink_norm"] = out["attempts_to_quit_drinking"] / (out["drinks_per_week"] + 1)
+    return out
+
+
+@REGISTRY.feature(
+    name="impute_social_support",
+    requires=("social_support", "marital_status", "children_count"),
+    produces=("social_support",),
+    order=40,
+    desc="Groupwise mode imputation by (marital_status, children_count).",
+)
+def feat_impute_social(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    grp = out.groupby(["marital_status", "children_count"])["social_support"].transform(_mode_safe)
+    glob = _mode_safe(out["social_support"])
+    out["social_support"] = out["social_support"].fillna(grp).fillna(glob)
+    return out
+
+
+@REGISTRY.feature(
+    name="impute_education_level",
+    requires=("education_level", "employment_status", "income_band"),
+    produces=("education_level",),
+    order=40,
+    desc="Groupwise mode imputation by (employment_status, income_band).",
+)
+def feat_impute_edu(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    grp = out.groupby(["employment_status", "income_band"])["education_level"].transform(_mode_safe)
+    glob = _mode_safe(out["education_level"])
+    out["education_level"] = out["education_level"].fillna(grp).fillna(glob)
+    return out
+
+
+@REGISTRY.feature(
+    name="impute_therapy_history",
+    requires=("therapy_history", "education_level", "marital_status", "mental_health_status"),
+    produces=("therapy_history",),
+    order=40,
+    desc="Groupwise mode imputation by (education_level, marital_status, mental_health_status).",
+)
+def feat_impute_therapy(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    grp = (
+        out.groupby(["education_level", "marital_status", "mental_health_status"])["therapy_history"]
+           .transform(_mode_safe)
+    )
+    glob = _mode_safe(out["therapy_history"])
+    out["therapy_history"] = out["therapy_history"].fillna(grp).fillna(glob)
+    return out
+
+
+# -----------------------------
+# Backward-compatible builder
+# -----------------------------
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build domain features via the FeatureSpec registry.
+    """
+    return REGISTRY.build(df)
+
+
+# -----------------------------
+# CLI
+# -----------------------------
 @app.command()
 def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
     input_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
     output_path: Path = PROCESSED_DATA_DIR / "features.csv",
-    # -----------------------------------------
+    only: Optional[str] = typer.Option(
+        None,
+        help="Comma-separated feature names to run exclusively.",
+    ),
+    exclude: Optional[str] = typer.Option(
+        None,
+        help="Comma-separated feature names to skip.",
+    ),
 ):
-    # ---- REPLACE THIS WITH YOUR OWN CODE ----
-    logger.info("Generating features from dataset...")
-    for i in tqdm(range(10), total=10):
-        if i == 5:
-            logger.info("Something happened for iteration 5.")
-    logger.success("Features generation complete.")
-    # -----------------------------------------
+    """
+    Load input CSV, build features, and write a new CSV.
+    """
+    if not input_path.exists():
+        typer.echo(f"[ERROR] Input not found: {input_path}")
+        raise typer.Exit(code=1)
+
+    only_set = set(map(str.strip, only.split(","))) if only else None
+    exclude_set = set(map(str.strip, exclude.split(","))) if exclude else None
+
+    logger.info(f"Loading: {input_path}")
+    df = pd.read_csv(input_path)
+
+    logger.info("Building features…")
+    for _ in tqdm(range(1), total=1):
+        df_feat = REGISTRY.build(df, only=only_set, exclude=exclude_set)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df_feat.to_csv(output_path, index=False)
+    logger.success(f"Wrote features → {output_path}")
 
 
 if __name__ == "__main__":

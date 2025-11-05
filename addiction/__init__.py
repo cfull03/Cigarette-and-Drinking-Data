@@ -1,28 +1,19 @@
 """
-addiction
-=========
+addiction package public API.
 
-Lightweight top-level API for the project package.
-
-What you get on import:
-- Configured logger (from `config.py`, tqdm-aware if available)
-- Canonical CCDS paths (DATA_DIR, RAW_DATA_DIR, etc.)
-- `ensure_project_dirs()` helper
-- Package `__version__`
+Exposes:
+- Paths & setup: PROJ_ROOT, DATA_DIR, RAW_DATA_DIR, INTERIM_DATA_DIR, PROCESSED_DATA_DIR,
+                 EXTERNAL_DATA_DIR, MODELS_DIR, REPORTS_DIR, FIGURES_DIR, setup()
+- Features & preprocessing: build_features(), FeatureSpec, build_preprocessor()
+- (Optional) Modeling & metrics: build_model(), fit_pipeline(), predict(), compute_metrics()
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable
 
-# Expose the configured loguru logger (same instance configured in config)
-from loguru import logger as log  # noqa: F401
-
-# Import config first so logging/paths are initialized once here.
-from . import config as _config  # noqa: F401
-
-# Re-export commonly used symbols from config
+# --- Paths from config ---
 from .config import (  # noqa: F401
     DATA_DIR,
     EXTERNAL_DATA_DIR,
@@ -33,60 +24,61 @@ from .config import (  # noqa: F401
     PROJ_ROOT,
     RAW_DATA_DIR,
     REPORTS_DIR,
-    ensure_project_dirs,
+    logger,  # keep logger configured once here
 )
 
-# Package version (best-effort)
-try:  # Python 3.8+
-    from importlib.metadata import PackageNotFoundError, version
-except Exception:  # pragma: no cover
-    try:
-        from importlib_metadata import PackageNotFoundError, version  # type: ignore
-    except Exception:  # pragma: no cover
-        version = None  # type: ignore
-        PackageNotFoundError = Exception  # type: ignore
 
+# --- Small helper to ensure the project directory tree exists ---
+def setup(extra_dirs: Iterable[Path] | None = None) -> None:
+    """Create the standard CCDS directory tree if missing."""
+    base_dirs = [
+        DATA_DIR,
+        RAW_DATA_DIR,
+        INTERIM_DATA_DIR,
+        PROCESSED_DATA_DIR,
+        EXTERNAL_DATA_DIR,
+        MODELS_DIR,
+        REPORTS_DIR,
+        FIGURES_DIR,
+    ]
+    if extra_dirs:
+        base_dirs.extend(list(extra_dirs))
+    for p in base_dirs:
+        Path(p).mkdir(parents=True, exist_ok=True)
+    logger.success("Project directories verified/created.")
 
-def _get_version() -> str:
-    if version is None:
-        return "0.0.0"
-    try:
-        return version("addiction")
-    except PackageNotFoundError:
-        # Editable installs before build metadata exists, or running from source
-        return "0.0.0"
+# --- Feature engineering ---
+from .features import build_features  # your new function  # noqa: E402
 
+# --- Preprocessor spec + builder ---
+# If you created addiction/preprocess.py, import from there; otherwise fall back to features.py
+try:  # preferred: lightweight scaler/encoder-only preprocessor
+    from .preprocess import FeatureSpec, build_preprocessor  # type: ignore
+except Exception:  # fallback to definitions living in features.py
+    from .features import FeatureSpec, build_preprocessor  # type: ignore
 
-__version__ = _get_version()
+# --- (Optional) modeling & metrics, if present ---
+try:
+    from .modeling import build_model, fit_pipeline, predict  # type: ignore
+except Exception:
+    # Make these names optional; avoids hard import failures
+    def build_model(*args, **kwargs):  # type: ignore
+        raise ImportError("addiction.modeling not available")
 
+    def fit_pipeline(*args, **kwargs):  # type: ignore
+        raise ImportError("addiction.modeling not available")
 
-def setup(extra_dirs: Optional[Iterable[Path]] = None) -> None:
-    """
-    One-call convenience to ensure the CCDS directory tree exists.
+    def predict(*args, **kwargs):  # type: ignore
+        raise ImportError("addiction.modeling not available")
 
-    Parameters
-    ----------
-    extra_dirs : Optional[Iterable[pathlib.Path]]
-        Any additional directories to create.
-
-    Examples
-    --------
-    >>> from addiction import setup
-    >>> setup()  # creates data/, reports/, models/, etc.
-    """
-    ensure_project_dirs(extra=extra_dirs)
-    log.info("addiction setup complete.")
-
-
-def __repr__() -> str:  # pragma: no cover
-    return f"<addiction {__version__} root={PROJ_ROOT}>"
+try:
+    from .metrics import compute_metrics  # type: ignore
+except Exception:
+    def compute_metrics(*args, **kwargs):  # type: ignore
+        raise ImportError("addiction.metrics not available")
 
 __all__ = [
-    # version
-    "__version__",
-    # logger
-    "log",
-    # paths
+    # paths + setup
     "PROJ_ROOT",
     "DATA_DIR",
     "RAW_DATA_DIR",
@@ -96,8 +88,14 @@ __all__ = [
     "MODELS_DIR",
     "REPORTS_DIR",
     "FIGURES_DIR",
-    # helpers
-    "ensure_project_dirs",
     "setup",
+    # features + preprocessing
+    "build_features",
+    "FeatureSpec",
+    "build_preprocessor",
+    # (optional) modeling + metrics
+    "build_model",
+    "fit_pipeline",
+    "predict",
+    "compute_metrics",
 ]
-
