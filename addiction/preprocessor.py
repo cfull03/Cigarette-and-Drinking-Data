@@ -1,4 +1,3 @@
-# filepath: addiction/preprocessor.py
 """
 scikit-learn preprocessing pipeline for DS/ML:
 
@@ -30,6 +29,7 @@ app = typer.Typer(help="scikit-learn preprocessor (SimpleImputer + StandardScale
 __all__ = [
     # column utilities
     "infer_columns",
+    "infer_column_types",
     # builders & operations
     "build_preprocessor",
     "make_preprocessor",
@@ -54,7 +54,7 @@ def _get_bound_cols(ct: ColumnTransformer, name: str) -> list[str]:
     """Return currently bound columns for a transformer by name (mypy-safe)."""
     for n, _, cols in ct.transformers:
         if n == name:
-            bound: Sequence[str] = cast(Sequence[str], cols)  # ensure Sequence[str]
+            bound: Sequence[str] = cast(Sequence[str], cols)
             return list(bound)
     return []
 
@@ -88,6 +88,11 @@ def infer_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     return num, cat
 
 
+def infer_column_types(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+    """Alias for infer_columns(df)."""
+    return infer_columns(df)
+
+
 def build_preprocessor(
     *,
     numeric_cols: Optional[Sequence[str]] = None,
@@ -96,25 +101,15 @@ def build_preprocessor(
 ) -> ColumnTransformer:
     """
     Factory for a ColumnTransformer with numeric + categorical branches.
-
-    Parameters
-    ----------
-    numeric_cols : Optional[Sequence[str]]
-        Columns to treat as numeric (impute median, then scale).
-    categorical_cols : Optional[Sequence[str]]
-        Columns to treat as categorical (impute most_frequent, then OHE if enabled).
-    encode_categoricals : bool
-        If True, apply OneHotEncoder to categoricals; otherwise pass imputed categories through.
     """
     num_pipe = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),  # normalize magnitude for many models
+            ("scaler", StandardScaler()),
         ]
     )
 
     if encode_categoricals:
-        # sklearn>=1.2 uses sparse_output, older uses sparse
         try:
             ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
         except TypeError:
@@ -126,11 +121,7 @@ def build_preprocessor(
             ]
         )
     else:
-        cat_pipe = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-            ]
-        )
+        cat_pipe = Pipeline([("imputer", SimpleImputer(strategy="most_frequent"))])
 
     ncols = list(numeric_cols) if numeric_cols else []
     ccols = list(categorical_cols) if categorical_cols else []
@@ -144,7 +135,7 @@ def build_preprocessor(
         verbose_feature_names_out=False,
     )
     try:
-        ct.set_output(transform="pandas")  # sklearn>=1.2 returns a pandas DataFrame
+        ct.set_output(transform="pandas")  # sklearn>=1.2
     except Exception:
         pass
     return ct
@@ -161,9 +152,7 @@ def fit_preprocessor(
     categorical_cols: Optional[Sequence[str]] = None,
     encode_categoricals: bool = True,
 ) -> ColumnTransformer:
-    """
-    Build and fit the preprocessor on df (call on TRAIN ONLY to avoid leakage).
-    """
+    """Build and fit the preprocessor on df (call on TRAIN ONLY to avoid leakage)."""
     if numeric_cols is None or categorical_cols is None:
         inf_num, inf_cat = infer_columns(df)
         numeric_cols = inf_num if numeric_cols is None else list(numeric_cols)
@@ -188,9 +177,6 @@ def transform_df(
 ) -> pd.DataFrame:
     """
     Apply a fitted preprocessor to df. If cols provided, rebind selections first.
-
-    Returns a pandas DataFrame when supported (sklearn>=1.2 + set_output), else
-    constructs column names and returns a DataFrame fallback.
     """
     if numeric_cols is not None or categorical_cols is not None:
         current_num: List[str] = _get_bound_cols(ct, "num")
@@ -205,7 +191,7 @@ def transform_df(
     if isinstance(out, pd.DataFrame):
         return out  # pandas output path
 
-    # Fallback: construct column names for numpy output
+    # Fallback: construct names for numpy output
     feature_names: List[str] = get_feature_names_after_preprocessor(
         ct,
         numeric_cols=_get_bound_cols(ct, "num"),
@@ -221,18 +207,11 @@ def get_feature_names_after_preprocessor(
     categorical_cols: Sequence[str],
 ) -> List[str]:
     """
-    Recover feature names after a fitted ColumnTransformer with a possible OHE step.
-
-    Notes
-    -----
-    - Call this *after* ct.fit(...) (or after a pipeline .fit(...)).
-    - Works whether the transformer outputs pandas or numpy arrays.
+    Recover feature names after a fitted ColumnTransformer (handles OHE if present).
     """
     names: List[str] = []
-    # numeric names (after scaling, names stay the same)
     names.extend(list(numeric_cols))
 
-    # categorical names (handle OHE if present)
     try:
         transformers = dict(ct.named_transformers_)
         cat = transformers.get("cat")
@@ -242,12 +221,9 @@ def get_feature_names_after_preprocessor(
                 names.extend(ohe.get_feature_names_out(list(categorical_cols)).tolist())
             else:
                 names.extend(list(categorical_cols))
-        else:
-            # If cat branch is passthrough, keep original names
-            if cat == "passthrough":
-                names.extend(list(categorical_cols))
+        elif cat == "passthrough":
+            names.extend(list(categorical_cols))
     except Exception:
-        # very defensive fallback
         names.extend(list(categorical_cols))
 
     return names

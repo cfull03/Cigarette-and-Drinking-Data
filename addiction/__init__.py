@@ -1,4 +1,3 @@
-# filepath: addiction/__init__.py
 from __future__ import annotations
 
 # Optional: try to expose package version if installed
@@ -29,9 +28,8 @@ from .features import (
     build_features,
 )
 from .preprocessor import (
-    GroupwiseModeImputer,
     get_feature_names_after_preprocessor,
-    infer_column_types,
+    infer_column_types,  # alias to infer_columns
     load_preprocessor,
     make_preprocessor,
     save_preprocessor,
@@ -57,5 +55,4 @@ __all__ = [
     "save_preprocessor",
     "load_preprocessor",
     "get_feature_names_after_preprocessor",
-    "GroupwiseModeImputer",
 ]
