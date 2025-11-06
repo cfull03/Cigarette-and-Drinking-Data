@@ -27,17 +27,23 @@ from addiction.config import MODELS_DIR, PROCESSED_DATA_DIR
 
 app = typer.Typer(help="scikit-learn preprocessor (SimpleImputer + StandardScaler + optional OneHotEncoder).")
 
+__all__ = [
+    # column utilities
+    "infer_columns",
+    # builders & operations
+    "build_preprocessor",
+    "make_preprocessor",
+    "fit_preprocessor",
+    "transform_df",
+    "get_feature_names_after_preprocessor",
+    # persistence
+    "save_preprocessor",
+    "load_preprocessor",
+]
 
-# -----------------------------
-# Column utilities
-# -----------------------------
-def infer_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
-    """Infer numeric and categorical columns."""
-    num = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat = df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
-    return num, cat
-
-
+# -----------------------------------------------------------------------------
+# Private helpers
+# -----------------------------------------------------------------------------
 def _csv_to_list(arg: Optional[str]) -> Optional[List[str]]:
     if not arg:
         return None
@@ -72,9 +78,16 @@ def _rebind_columns(
     return ct
 
 
-# -----------------------------
-# Builders
-# -----------------------------
+# -----------------------------------------------------------------------------
+# Public API
+# -----------------------------------------------------------------------------
+def infer_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+    """Infer numeric and categorical columns."""
+    num = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat = df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    return num, cat
+
+
 def build_preprocessor(
     *,
     numeric_cols: Optional[Sequence[str]] = None,
@@ -83,11 +96,20 @@ def build_preprocessor(
 ) -> ColumnTransformer:
     """
     Factory for a ColumnTransformer with numeric + categorical branches.
+
+    Parameters
+    ----------
+    numeric_cols : Optional[Sequence[str]]
+        Columns to treat as numeric (impute median, then scale).
+    categorical_cols : Optional[Sequence[str]]
+        Columns to treat as categorical (impute most_frequent, then OHE if enabled).
+    encode_categoricals : bool
+        If True, apply OneHotEncoder to categoricals; otherwise pass imputed categories through.
     """
     num_pipe = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),  # Why: normalize magnitude for many models
+            ("scaler", StandardScaler()),  # normalize magnitude for many models
         ]
     )
 
@@ -122,10 +144,14 @@ def build_preprocessor(
         verbose_feature_names_out=False,
     )
     try:
-        ct.set_output(transform="pandas")  # sklearn>=1.2
+        ct.set_output(transform="pandas")  # sklearn>=1.2 returns a pandas DataFrame
     except Exception:
         pass
     return ct
+
+
+# friendly alias to match other modules' naming
+make_preprocessor = build_preprocessor
 
 
 def fit_preprocessor(
@@ -136,7 +162,7 @@ def fit_preprocessor(
     encode_categoricals: bool = True,
 ) -> ColumnTransformer:
     """
-    Build and fit the preprocessor on df.
+    Build and fit the preprocessor on df (call on TRAIN ONLY to avoid leakage).
     """
     if numeric_cols is None or categorical_cols is None:
         inf_num, inf_cat = infer_columns(df)
@@ -162,6 +188,9 @@ def transform_df(
 ) -> pd.DataFrame:
     """
     Apply a fitted preprocessor to df. If cols provided, rebind selections first.
+
+    Returns a pandas DataFrame when supported (sklearn>=1.2 + set_output), else
+    constructs column names and returns a DataFrame fallback.
     """
     if numeric_cols is not None or categorical_cols is not None:
         current_num: List[str] = _get_bound_cols(ct, "num")
@@ -177,29 +206,56 @@ def transform_df(
         return out  # pandas output path
 
     # Fallback: construct column names for numpy output
-    feature_names: List[str] = []
-    for name, trans, cols in ct.transformers_:  # type: ignore[attr-defined]
-        cols_list: List[str] = list(cast(Sequence[str], cols))
-        if name == "num":
-            feature_names.extend(cols_list)
-        elif name == "cat":
-            try:
-                ohe = trans.named_steps.get("ohe")  # type: ignore[attr-defined]
-                if ohe is not None:
-                    feature_names.extend(ohe.get_feature_names_out(cols_list).tolist())  # type: ignore[arg-type]
-                else:
-                    feature_names.extend(cols_list)
-            except Exception:
-                feature_names.extend(cols_list)
-        else:
-            feature_names.extend(cols_list)
-
+    feature_names: List[str] = get_feature_names_after_preprocessor(
+        ct,
+        numeric_cols=_get_bound_cols(ct, "num"),
+        categorical_cols=_get_bound_cols(ct, "cat"),
+    )
     return pd.DataFrame(out, columns=feature_names, index=df.index)
 
 
-# -----------------------------
-# Persistence
-# -----------------------------
+def get_feature_names_after_preprocessor(
+    ct: ColumnTransformer,
+    *,
+    numeric_cols: Sequence[str],
+    categorical_cols: Sequence[str],
+) -> List[str]:
+    """
+    Recover feature names after a fitted ColumnTransformer with a possible OHE step.
+
+    Notes
+    -----
+    - Call this *after* ct.fit(...) (or after a pipeline .fit(...)).
+    - Works whether the transformer outputs pandas or numpy arrays.
+    """
+    names: List[str] = []
+    # numeric names (after scaling, names stay the same)
+    names.extend(list(numeric_cols))
+
+    # categorical names (handle OHE if present)
+    try:
+        transformers = dict(ct.named_transformers_)
+        cat = transformers.get("cat")
+        if cat not in ("drop", "passthrough", None):
+            ohe = getattr(cat, "named_steps", {}).get("ohe")
+            if ohe is not None:
+                names.extend(ohe.get_feature_names_out(list(categorical_cols)).tolist())
+            else:
+                names.extend(list(categorical_cols))
+        else:
+            # If cat branch is passthrough, keep original names
+            if cat == "passthrough":
+                names.extend(list(categorical_cols))
+    except Exception:
+        # very defensive fallback
+        names.extend(list(categorical_cols))
+
+    return names
+
+
+# -----------------------------------------------------------------------------
+# Persistence (Public API)
+# -----------------------------------------------------------------------------
 def save_preprocessor(ct: ColumnTransformer, path: Path | str) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)

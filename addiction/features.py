@@ -5,10 +5,10 @@ from __future__ import annotations
 Feature engineering utilities and CLI for the Cigarette & Drinking dataset.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  
 import functools
 from pathlib import Path
-from typing import Callable, Final, Iterable, Optional, Set, TypeVar
+from typing import Callable, Final, Iterable, List, Optional, Set, TypeVar
 
 from loguru import logger
 import numpy as np
@@ -19,6 +19,14 @@ import typer
 from addiction.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
 
 app = typer.Typer(help="Feature engineering CLI for the Cigarette & Drinking dataset.")
+
+__all__ = [
+    "FeatureError",
+    "FeatureSpec",
+    "FeatureRegistry",
+    "REGISTRY",
+    "build_features",
+]
 
 # -----------------------------
 # Utilities
@@ -165,7 +173,7 @@ class FeatureRegistry:
             setattr(wrapper, "__feature_produces__", tuple(sorted(prods)))
             setattr(wrapper, "__original_func__", func)
 
-            return wrapper 
+            return wrapper
         return deco
 
     def names(self) -> list[str]:
@@ -381,9 +389,9 @@ def feat_impute_therapy(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-# -----------------------------
-# Public builder
-# -----------------------------
+# -----------------------------------------------------------------------------
+# Public API
+# -----------------------------------------------------------------------------
 def build_features(df: pd.DataFrame, target: Optional[str] = None) -> pd.DataFrame:
     """
     Build domain features via the FeatureSpec registry.
@@ -393,13 +401,22 @@ def build_features(df: pd.DataFrame, target: Optional[str] = None) -> pd.DataFra
     return REGISTRY.build(work)
 
 
+__all__ = [
+    "FeatureError",
+    "FeatureSpec",
+    "FeatureRegistry",
+    "REGISTRY",
+    "build_features",
+]
+
+
 # -----------------------------
 # CLI
 # -----------------------------
 @app.command()
 def main(
     input_path: Path = INTERIM_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "datasset.csv",
+    output_path: Path = PROCESSED_DATA_DIR / "dataset.csv",  # fixed typo
     only: Optional[str] = typer.Option(
         None,
         help="Comma-separated feature names to run exclusively.",
@@ -412,8 +429,18 @@ def main(
         None,
         help="Target column name to drop (also drops any one-hot columns like '<target>_*').",
     ),
+    list_features: bool = typer.Option(
+        False, "--list", "-l", help="List available features (by order) and exit."
+    ),
 ) -> None:
     """Load CSV, (optionally) drop target(+OHE), build features, write CSV."""
+    if list_features:
+        specs: List[FeatureSpec] = sorted(REGISTRY._specs.values())  # type: ignore[attr-defined]
+        for s in specs:
+            status = "ENABLED" if s.enabled else "DISABLED"
+            print(f"{s.order:>3} | {s.name:<24} | {status:<8} | requires={sorted(s.requires)}")
+        raise typer.Exit(code=0)
+
     if not input_path.exists():
         typer.echo(f"[ERROR] Input not found: {input_path}")
         raise typer.Exit(code=1)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Tuple  # added Tuple
 
 from loguru import logger
 import numpy as np
@@ -12,6 +12,14 @@ import typer
 from addiction.config import INTERIM_DATA_DIR, RAW_DATA_DIR
 
 app = typer.Typer(add_completion=False)  # single-command CLI
+
+__all__ = [
+    "load_raw",
+    "basic_cleanup",
+    "save_interim",
+    "load_interim",
+    "train_test_split_safe",
+]
 
 
 # -------------------------
@@ -116,6 +124,132 @@ def _write_processed(df: pd.DataFrame, output_path: Path) -> Path:
     df.to_csv(output_path, index=False)
     logger.success(f"Wrote processed dataset → {output_path}")
     return output_path
+
+
+# -------------------------
+# Public API (importable)
+# -------------------------
+def load_raw(path: Optional[Path] = None) -> pd.DataFrame:
+    """
+    Load the raw dataset (CSV).
+
+    If `path` is None, loads from `data/raw/addiction_population_data.csv`.
+
+    Parameters
+    ----------
+    path : Optional[Path]
+        Explicit CSV path, or None for project default.
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    resolved = (path.resolve() if path is not None else (RAW_DATA_DIR / "addiction_population_data.csv"))
+    if not Path(resolved).exists():
+        raise FileNotFoundError(f"Raw data not found: {resolved}")
+    logger.info(f"Loading raw data: {resolved}")
+    return pd.read_csv(resolved)
+
+
+def basic_cleanup(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Minimal, target-agnostic cleanup safe to run BEFORE any train/test split.
+
+    - Normalizes column names (lower snake_case).
+    - Coerces numeric candidates to numeric (NaN on errors).
+    - Standardizes common categoricals (stripped, lowercase).
+    - Drops duplicate rows.
+    - Ensures a monotonically increasing integer 'id' exists.
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    return _basic_clean(df)
+
+
+def save_interim(df: pd.DataFrame, path: Optional[Path] = None) -> Path:
+    """
+    Save a cleaned/interim dataset to disk (CSV).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+    path : Optional[Path]
+        Destination path. If None, defaults to data/interim/dataset.csv
+
+    Returns
+    -------
+    Path
+        Resolved output path.
+    """
+    output = (path or (INTERIM_DATA_DIR / "dataset.csv")).resolve()
+    return _write_processed(df, output)
+
+
+def load_interim(path: Optional[Path] = None) -> pd.DataFrame:
+    """
+    Load the interim dataset (post-basic-cleanup, pre-features).
+
+    Parameters
+    ----------
+    path : Optional[Path]
+        CSV path. If None, uses data/interim/dataset.csv
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    resolved = (path or (INTERIM_DATA_DIR / "dataset.csv")).resolve()
+    if not resolved.exists():
+        raise FileNotFoundError(f"Interim data not found: {resolved}")
+    logger.info(f"Loading interim data: {resolved}")
+    return pd.read_csv(resolved)
+
+
+def train_test_split_safe(
+    df: pd.DataFrame,
+    target: str,
+    test_size: float = 0.2,
+    random_state: int = 42,
+    stratify: bool = True,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """
+    Split BEFORE leakage-prone transforms (imputation/encoding/feature selection).
+    Use this when you plan to run feature engineering separately on train/test.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe containing the target column.
+    target : str
+        Target column name.
+    test_size : float, default=0.2
+    random_state : int, default=42
+    stratify : bool, default=True
+        If True, stratify by the target column.
+
+    Returns
+    -------
+    (X_train, X_test, y_train, y_test)
+    """
+    from sklearn.model_selection import train_test_split
+
+    if target not in df.columns:
+        raise KeyError(f"Target column '{target}' not in DataFrame.")
+
+    y = df[target]
+    X = df.drop(columns=[target])
+    strat = y if stratify else None
+
+    Xtr, Xte, ytr, yte = train_test_split(
+        X, y, test_size=test_size, random_state=random_state, stratify=strat
+    )
+    logger.info(
+        f"Split complete: X_train={Xtr.shape}, X_test={Xte.shape}, "
+        f"y_train={ytr.shape}, y_test={yte.shape}"
+    )
+    return Xtr, Xte, ytr, yte
 
 
 # -------------------------

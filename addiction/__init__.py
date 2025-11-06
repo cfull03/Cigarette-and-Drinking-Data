@@ -1,94 +1,61 @@
 # filepath: addiction/__init__.py
-"""
-addiction package public API.
-
-Exports:
-- Paths & logger: PROJ_ROOT, DATA_DIR, RAW_DATA_DIR, INTERIM_DATA_DIR, PROCESSED_DATA_DIR,
-                  EXTERNAL_DATA_DIR, MODELS_DIR, REPORTS_DIR, FIGURES_DIR, logger
-- Setup helper: setup()
-- Features: build_features(), FeatureSpec, FeatureRegistry, REGISTRY
-- Preprocessor (sklearn): build_preprocessor(), fit_preprocessor(), transform_df(),
-                          save_preprocessor(), load_preprocessor()
-"""
-
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable
+# Optional: try to expose package version if installed
+try:
+    from importlib.metadata import PackageNotFoundError, version  # Python 3.8+
+except Exception:  # pragma: no cover
+    version = None
+    PackageNotFoundError = Exception  # type: ignore[misc]
 
-# Paths, logger
-from .config import (  # noqa: F401
-    DATA_DIR,
-    EXTERNAL_DATA_DIR,
-    FIGURES_DIR,
-    INTERIM_DATA_DIR,
-    MODELS_DIR,
-    PROCESSED_DATA_DIR,
-    PROJ_ROOT,
-    RAW_DATA_DIR,
-    REPORTS_DIR,
-    logger,
+try:  # pragma: no cover
+    __version__ = version("addiction") if version else "0.0.0"
+except PackageNotFoundError:  # pragma: no cover
+    __version__ = "0.0.0"
+
+# ---- Public API re-exports ----
+from .dataset import (
+    basic_cleanup,
+    load_interim,
+    load_raw,
+    save_interim,
+    train_test_split_safe,
 )
-
-
-# Setup helper (mkdir -p for standard dirs)
-def setup(extra_dirs: Iterable[Path] | None = None) -> None:
-    base_dirs = [
-        DATA_DIR,
-        RAW_DATA_DIR,
-        INTERIM_DATA_DIR,
-        PROCESSED_DATA_DIR,
-        EXTERNAL_DATA_DIR,
-        MODELS_DIR,
-        REPORTS_DIR,
-        FIGURES_DIR,
-    ]
-    if extra_dirs:
-        base_dirs.extend(list(extra_dirs))
-    for p in base_dirs:
-        p.mkdir(parents=True, exist_ok=True)
-    logger.success("Project directories verified/created.")
-
-# Features API
-from .features import (  # noqa: E402, F401
+from .features import (
     REGISTRY,
+    FeatureError,
     FeatureRegistry,
     FeatureSpec,
     build_features,
 )
-
-# Preprocessor API (scikit-learn)
-from .preprocessor import (  # noqa: E402, F401
-    build_preprocessor,
-    fit_preprocessor,
+from .preprocessor import (
+    GroupwiseModeImputer,
+    get_feature_names_after_preprocessor,
+    infer_column_types,
     load_preprocessor,
+    make_preprocessor,
     save_preprocessor,
-    transform_df,
 )
 
 __all__ = [
-    # paths & logger
-    "PROJ_ROOT",
-    "DATA_DIR",
-    "RAW_DATA_DIR",
-    "INTERIM_DATA_DIR",
-    "PROCESSED_DATA_DIR",
-    "EXTERNAL_DATA_DIR",
-    "MODELS_DIR",
-    "REPORTS_DIR",
-    "FIGURES_DIR",
-    "logger",
-    # setup
-    "setup",
+    "__version__",
+    # dataset
+    "load_raw",
+    "basic_cleanup",
+    "save_interim",
+    "load_interim",
+    "train_test_split_safe",
     # features
-    "build_features",
+    "FeatureError",
     "FeatureSpec",
     "FeatureRegistry",
     "REGISTRY",
+    "build_features",
     # preprocessor
-    "build_preprocessor",
-    "fit_preprocessor",
-    "transform_df",
+    "infer_column_types",
+    "make_preprocessor",
     "save_preprocessor",
     "load_preprocessor",
+    "get_feature_names_after_preprocessor",
+    "GroupwiseModeImputer",
 ]
