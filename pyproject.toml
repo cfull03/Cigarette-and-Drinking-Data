@@ -6,27 +6,77 @@ build-backend = "flit_core.buildapi"
 name = "addiction"
 version = "0.0.1"
 description = "Analysis of cigarette and alcohol data"
-authors = [
-  { name = "Christian Fullerton" },
-]
+authors = [{ name = "Christian Fullerton" }]
 license = { file = "LICENSE" }
 readme = "README.md"
+requires-python = ">=3.12,<3.13"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License"
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
 ]
-requires-python = "~=3.12.0"
 
+# --- Runtime dependencies (used by your code) ---
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "scikit-learn>=1.4",   # for 3.12 support + OneHotEncoder sparse_output
+  "typer>=0.9",
+  "loguru>=0.7",
+  "python-dotenv>=1.0",
+  "tqdm>=4.66",
+  "joblib>=1.3",
+]
 
+# Optional CLI entry points (Typer apps)
+[project.scripts]
+addiction-dataset = "addiction.dataset:app"
+addiction-features = "addiction.features:app"
+addiction-preprocessor = "addiction.preprocessor:app"
+
+[project.urls]
+Homepage = "https://github.com/your-org/your-repo"
+Issues = "https://github.com/your-org/your-repo/issues"
+
+# ---------------- Ruff ----------------
 [tool.ruff]
 line-length = 99
 src = ["addiction"]
 include = ["pyproject.toml", "addiction/**/*.py"]
 
 [tool.ruff.lint]
-extend-select = ["I"]  # Add import sorting
+extend-select = ["I"]  # isort
 
 [tool.ruff.lint.isort]
 known-first-party = ["addiction"]
 force-sort-within-sections = true
 
+# ---------------- Mypy ----------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# Silence third-party typing gaps; keep your code strict
+[[tool.mypy.overrides]]
+module = "sklearn.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_missing_imports = true
+
+# ---------------- Dev extras (install via: `pip install .[dev]`) ----------------
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "pytest>=8.2",
+  "pre-commit>=3.8",
+  "nbstripout>=0.7",
+]

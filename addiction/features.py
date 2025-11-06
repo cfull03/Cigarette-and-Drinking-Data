@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Set
+from typing import Callable, Final, Iterable, Optional, Set, TypeVar
 
 from loguru import logger
 import numpy as np
@@ -14,14 +14,11 @@ import typer
 from addiction.config import PROCESSED_DATA_DIR
 
 app = typer.Typer(help="Feature engineering CLI for the Cigarette & Drinking dataset.")
-features_app = typer.Typer(help="Manage feature specs.")
-app.add_typer(features_app, name="features")
-
 
 # -----------------------------
 # Utilities
 # -----------------------------
-def _mode_safe(s: pd.Series):
+def _mode_safe(s: pd.Series) -> object:
     m = s.mode(dropna=True)
     return m.iat[0] if not m.empty else np.nan
 
@@ -47,11 +44,14 @@ class FeatureSpec:
     - `order`: coarse ordering across specs.
     - `enabled`: default on/off; can be overridden via CLI.
     """
+    # non-default fields first (dataclass rule)
     order: int
     name: str = field(compare=False)
+    func: Callable[[pd.DataFrame], pd.DataFrame] = field(compare=False)
+
+    # defaults after
     requires: Set[str] = field(default_factory=set, compare=False)
     produces: Set[str] = field(default_factory=set, compare=False)
-    func: Callable[[pd.DataFrame], pd.DataFrame] = field(default=None, compare=False)
     desc: str = field(default="", compare=False)
     enabled: bool = field(default=True, compare=False)
 
@@ -73,8 +73,11 @@ class FeatureSpec:
             return df
 
 
+F = TypeVar("F", bound=Callable[[pd.DataFrame], pd.DataFrame])
+
+
 class FeatureRegistry:
-    def __init__(self):
+    def __init__(self) -> None:
         self._specs: dict[str, FeatureSpec] = {}
 
     def register(self, spec: FeatureSpec) -> FeatureSpec:
@@ -92,8 +95,9 @@ class FeatureRegistry:
         order: int = 100,
         desc: str = "",
         enabled: bool = True,
-    ):
-        def deco(func: Callable[[pd.DataFrame], pd.DataFrame]):
+    ) -> Callable[[F], F]:
+        """Decorator factory to register a DataFrame->DataFrame feature."""
+        def deco(func: F) -> F:
             spec = FeatureSpec(
                 name=name,
                 requires=set(requires),
@@ -113,8 +117,8 @@ class FeatureRegistry:
     def get(self, name: str) -> FeatureSpec:
         try:
             return self._specs[name]
-        except KeyError:
-            raise FeatureError(f"Unknown feature: {name}")
+        except KeyError as exc:
+            raise FeatureError(f"Unknown feature: {name}") from exc
 
     def build(
         self,
@@ -146,7 +150,7 @@ class FeatureRegistry:
         return out
 
 
-REGISTRY = FeatureRegistry()
+REGISTRY: Final[FeatureRegistry] = FeatureRegistry()
 
 
 # -----------------------------
@@ -317,9 +321,7 @@ def feat_impute_therapy(df: pd.DataFrame) -> pd.DataFrame:
 # Backward-compatible builder
 # -----------------------------
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build domain features via the FeatureSpec registry.
-    """
+    """Build domain features via the FeatureSpec registry."""
     return REGISTRY.build(df)
 
 
@@ -338,10 +340,8 @@ def main(
         None,
         help="Comma-separated feature names to skip.",
     ),
-):
-    """
-    Load input CSV, build features, and write a new CSV.
-    """
+) -> None:
+    """Load input CSV, build features, and write a new CSV."""
     if not input_path.exists():
         typer.echo(f"[ERROR] Input not found: {input_path}")
         raise typer.Exit(code=1)

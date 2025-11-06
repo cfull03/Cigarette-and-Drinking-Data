@@ -15,8 +15,6 @@ PYTHON_INTERPRETER = python
 .PHONY: requirements
 requirements:
 	conda env update --name $(PROJECT_NAME) --file environment.yml --prune
-	
-
 
 
 ## Delete all compiled Python files
@@ -39,32 +37,60 @@ format:
 	ruff format
 
 
-
 ## Run tests
 .PHONY: test
 test:
-	python -m pytest tests
+	$(PYTHON_INTERPRETER) -m pytest tests
 
 
 ## Set up Python interpreter environment
 .PHONY: create_environment
 create_environment:
 	conda env create --name $(PROJECT_NAME) -f environment.yml
-	
 	@echo ">>> conda env created. Activate with:\nconda activate $(PROJECT_NAME)"
-	
-
 
 
 #################################################################################
 # PROJECT RULES                                                                 #
 #################################################################################
 
-
-## Make dataset
+## Make dataset (produces data/processed/dataset.csv)
 .PHONY: data
 data: requirements
 	$(PYTHON_INTERPRETER) addiction/dataset.py
+
+
+# -------- Feature engineering (addiction/features.py) --------
+IN ?= data/processed/dataset.csv
+OUT ?= data/processed/features.csv
+
+## Build engineered features (IN -> OUT)
+.PHONY: features
+features: data
+	$(PYTHON_INTERPRETER) addiction/features.py \
+		--input-path "$(IN)" \
+		--output-path "$(OUT)"
+
+
+# -------- Preprocessing (addiction/preprocessor.py) --------
+PREP_IN ?= data/processed/dataset.csv
+PREP_OUT ?= data/processed/features_preprocessed.csv
+PREP_MODEL ?= models/preprocessor.joblib
+NUM_COLS ?=
+CAT_COLS ?=
+ENCODE_CAT ?= 1   # 1=enable OHE, 0=disable
+
+## Fit preprocessor and transform in one step (PREP_IN -> PREP_OUT)
+.PHONY: preprocess
+preprocess: data
+	$(PYTHON_INTERPRETER) addiction/preprocessor.py \
+		--mode fit-transform \
+		--input-path "$(PREP_IN)" \
+		--output-path "$(PREP_OUT)" \
+		--model-path "$(PREP_MODEL)" \
+		$(if $(NUM_COLS),--num-cols "$(NUM_COLS)",) \
+		$(if $(CAT_COLS),--cat-cols "$(CAT_COLS)",) \
+		$(if $(filter 1,$(ENCODE_CAT)),--encode-cat,--no-encode-cat)
 
 
 #################################################################################

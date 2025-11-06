@@ -1,4 +1,4 @@
-# addiction/dataset.py
+# filepath: addiction/dataset.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,9 +17,10 @@ app = typer.Typer(add_completion=False)  # single-command CLI
 # -------------------------
 # Helpers (no CLI exposure)
 # -------------------------
-def _ensure_dirs(*paths: Iterable[Path]) -> None:
+def _ensure_dirs(*paths: Path) -> None:
+    """Create directories if missing. Why: mypy-safe Path-only API."""
     for p in paths:
-        Path(p).mkdir(parents=True, exist_ok=True)
+        p.mkdir(parents=True, exist_ok=True)
 
 
 def _coerce_numeric(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
@@ -34,9 +35,7 @@ def _standardize_strings(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
     out = df.copy()
     for c in cols:
         if c in out.columns:
-            out[c] = (
-                out[c].astype("string").str.strip().str.lower().replace({"": pd.NA})
-            )
+            out[c] = out[c].astype("string").str.strip().str.lower().replace({"": pd.NA})
     return out
 
 
@@ -68,9 +67,7 @@ def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
 
     # 1) normalize column names
-    out.columns = (
-        pd.Index(out.columns).str.strip().str.replace(r"\s+", "_", regex=True).str.lower()
-    )
+    out.columns = pd.Index(out.columns).str.strip().str.replace(r"\s+", "_", regex=True).str.lower()
 
     # 2) coerce numerics (tweak this list for your schema)
     numeric_candidates = [
@@ -139,7 +136,7 @@ def main(
         False,
         help="If set, only print a schema summary of the input and exit",
     ),
-):
+) -> None:
     """
     Ingest and prepare dataset (raw → processed) with a single command.
     Matches Makefile 'data' target: `python addiction/dataset.py`

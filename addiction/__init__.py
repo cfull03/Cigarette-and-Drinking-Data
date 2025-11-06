@@ -1,11 +1,14 @@
+# filepath: addiction/__init__.py
 """
 addiction package public API.
 
-Exposes:
-- Paths & setup: PROJ_ROOT, DATA_DIR, RAW_DATA_DIR, INTERIM_DATA_DIR, PROCESSED_DATA_DIR,
-                 EXTERNAL_DATA_DIR, MODELS_DIR, REPORTS_DIR, FIGURES_DIR, setup()
-- Features & preprocessing: build_features(), FeatureSpec, build_preprocessor()
-- (Optional) Modeling & metrics: build_model(), fit_pipeline(), predict(), compute_metrics()
+Exports:
+- Paths & logger: PROJ_ROOT, DATA_DIR, RAW_DATA_DIR, INTERIM_DATA_DIR, PROCESSED_DATA_DIR,
+                  EXTERNAL_DATA_DIR, MODELS_DIR, REPORTS_DIR, FIGURES_DIR, logger
+- Setup helper: setup()
+- Features: build_features(), FeatureSpec, FeatureRegistry, REGISTRY
+- Preprocessor (sklearn): build_preprocessor(), fit_preprocessor(), transform_df(),
+                          save_preprocessor(), load_preprocessor()
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
-# --- Paths from config ---
+# Paths, logger
 from .config import (  # noqa: F401
     DATA_DIR,
     EXTERNAL_DATA_DIR,
@@ -24,13 +27,12 @@ from .config import (  # noqa: F401
     PROJ_ROOT,
     RAW_DATA_DIR,
     REPORTS_DIR,
-    logger,  # keep logger configured once here
+    logger,
 )
 
 
-# --- Small helper to ensure the project directory tree exists ---
+# Setup helper (mkdir -p for standard dirs)
 def setup(extra_dirs: Iterable[Path] | None = None) -> None:
-    """Create the standard CCDS directory tree if missing."""
     base_dirs = [
         DATA_DIR,
         RAW_DATA_DIR,
@@ -44,41 +46,28 @@ def setup(extra_dirs: Iterable[Path] | None = None) -> None:
     if extra_dirs:
         base_dirs.extend(list(extra_dirs))
     for p in base_dirs:
-        Path(p).mkdir(parents=True, exist_ok=True)
+        p.mkdir(parents=True, exist_ok=True)
     logger.success("Project directories verified/created.")
 
-# --- Feature engineering ---
-from .features import build_features  # your new function  # noqa: E402
+# Features API
+from .features import (  # noqa: E402, F401
+    REGISTRY,
+    FeatureRegistry,
+    FeatureSpec,
+    build_features,
+)
 
-# --- Preprocessor spec + builder ---
-# If you created addiction/preprocess.py, import from there; otherwise fall back to features.py
-try:  # preferred: lightweight scaler/encoder-only preprocessor
-    from .preprocess import FeatureSpec, build_preprocessor  # type: ignore
-except Exception:  # fallback to definitions living in features.py
-    from .features import FeatureSpec, build_preprocessor  # type: ignore
-
-# --- (Optional) modeling & metrics, if present ---
-try:
-    from .modeling import build_model, fit_pipeline, predict  # type: ignore
-except Exception:
-    # Make these names optional; avoids hard import failures
-    def build_model(*args, **kwargs):  # type: ignore
-        raise ImportError("addiction.modeling not available")
-
-    def fit_pipeline(*args, **kwargs):  # type: ignore
-        raise ImportError("addiction.modeling not available")
-
-    def predict(*args, **kwargs):  # type: ignore
-        raise ImportError("addiction.modeling not available")
-
-try:
-    from .metrics import compute_metrics  # type: ignore
-except Exception:
-    def compute_metrics(*args, **kwargs):  # type: ignore
-        raise ImportError("addiction.metrics not available")
+# Preprocessor API (scikit-learn)
+from .preprocessor import (  # noqa: E402, F401
+    build_preprocessor,
+    fit_preprocessor,
+    load_preprocessor,
+    save_preprocessor,
+    transform_df,
+)
 
 __all__ = [
-    # paths + setup
+    # paths & logger
     "PROJ_ROOT",
     "DATA_DIR",
     "RAW_DATA_DIR",
@@ -88,14 +77,18 @@ __all__ = [
     "MODELS_DIR",
     "REPORTS_DIR",
     "FIGURES_DIR",
+    "logger",
+    # setup
     "setup",
-    # features + preprocessing
+    # features
     "build_features",
     "FeatureSpec",
+    "FeatureRegistry",
+    "REGISTRY",
+    # preprocessor
     "build_preprocessor",
-    # (optional) modeling + metrics
-    "build_model",
-    "fit_pipeline",
-    "predict",
-    "compute_metrics",
+    "fit_preprocessor",
+    "transform_df",
+    "save_preprocessor",
+    "load_preprocessor",
 ]
