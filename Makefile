@@ -6,23 +6,26 @@ PROJECT_NAME = cigarette-and-drinking-data
 PYTHON_VERSION = 3.12
 PYTHON_INTERPRETER = python
 
+PROCESSED := data/processed/dataset.csv
+PREP_MODEL ?= models/preprocessor.joblib
+NUM_COLS ?=
+CAT_COLS ?=
+ENCODE_CAT ?= 1   # 1=enable OHE, 0=disable
+
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
-
 
 ## Install Python dependencies
 .PHONY: requirements
 requirements:
 	conda env update --name $(PROJECT_NAME) --file environment.yml --prune
 
-
 ## Delete all compiled Python files
 .PHONY: clean
 clean:
 	find . -type f -name "*.py[co]" -delete
 	find . -type d -name "__pycache__" -delete
-
 
 ## Lint using ruff (use `make format` to do formatting)
 .PHONY: lint
@@ -36,12 +39,10 @@ format:
 	ruff check --fix
 	ruff format
 
-
 ## Run tests
 .PHONY: test
 test:
 	$(PYTHON_INTERPRETER) -m pytest tests
-
 
 ## Set up Python interpreter environment
 .PHONY: create_environment
@@ -49,49 +50,62 @@ create_environment:
 	conda env create --name $(PROJECT_NAME) -f environment.yml
 	@echo ">>> conda env created. Activate with:\nconda activate $(PROJECT_NAME)"
 
-
 #################################################################################
 # PROJECT RULES                                                                 #
 #################################################################################
 
-## Make dataset (produces data/processed/dataset.csv)
+## Make dataset at $(PROCESSED). If it exists, reuse it (no rebuild from raw).
 .PHONY: data
 data: requirements
-	$(PYTHON_INTERPRETER) addiction/dataset.py
+	@if [ -f "$(PROCESSED)" ]; then \
+		echo "✔ Using existing $(PROCESSED)"; \
+	else \
+		echo "→ Building processed dataset from raw → $(PROCESSED)"; \
+		$(PYTHON_INTERPRETER) addiction/dataset.py \
+			--output-path "$(PROCESSED)"; \
+	fi
 
-
-# -------- Feature engineering (addiction/features.py) --------
-IN ?= data/processed/dataset.csv
-OUT ?= data/processed/features.csv
-
-## Build engineered features (IN -> OUT)
+## Run feature engineering IN-PLACE on $(PROCESSED). If missing, build from raw first.
 .PHONY: features
-features: data
+features:
+	@if [ ! -f "$(PROCESSED)" ]; then \
+		echo "ℹ $(PROCESSED) missing; creating from raw first…"; \
+		$(PYTHON_INTERPRETER) addiction/dataset.py \
+			--output-path "$(PROCESSED)"; \
+	fi; \
+	echo "→ Applying features in-place to $(PROCESSED)"; \
 	$(PYTHON_INTERPRETER) addiction/features.py \
-		--input-path "$(IN)" \
-		--output-path "$(OUT)"
+		--input-path  "$(PROCESSED)" \
+		--output-path "$(PROCESSED)"
 
-
-# -------- Preprocessing (addiction/preprocessor.py) --------
-PREP_IN ?= data/processed/dataset.csv
-PREP_OUT ?= data/processed/features_preprocessed.csv
-PREP_MODEL ?= models/preprocessor.joblib
-NUM_COLS ?=
-CAT_COLS ?=
-ENCODE_CAT ?= 1   # 1=enable OHE, 0=disable
-
-## Fit preprocessor and transform in one step (PREP_IN -> PREP_OUT)
+## Fit+apply sklearn preprocessor IN-PLACE on $(PROCESSED).
+## If $(PROCESSED) missing, create it from raw first.
 .PHONY: preprocess
-preprocess: data
+preprocess:
+	@if [ ! -f "$(PROCESSED)" ]; then \
+		echo "ℹ $(PROCESSED) missing; creating from raw first…"; \
+		$(PYTHON_INTERPRETER) addiction/dataset.py \
+			--output-path "$(PROCESSED)"; \
+	fi; \
+	echo "→ Preprocessing in-place to $(PROCESSED)"; \
 	$(PYTHON_INTERPRETER) addiction/preprocessor.py \
 		--mode fit-transform \
-		--input-path "$(PREP_IN)" \
-		--output-path "$(PREP_OUT)" \
+		--input-path  "$(PROCESSED)" \
+		--output-path "$(PROCESSED)" \
 		--model-path "$(PREP_MODEL)" \
 		$(if $(NUM_COLS),--num-cols "$(NUM_COLS)",) \
 		$(if $(CAT_COLS),--cat-cols "$(CAT_COLS)",) \
 		$(if $(filter 1,$(ENCODE_CAT)),--encode-cat,--no-encode-cat)
 
+## Full pipeline (raw -> processed -> features -> preprocessed), all in $(PROCESSED)
+.PHONY: all
+all: data features preprocess
+
+## Remove processed artifact to force a fresh build next run
+.PHONY: reset
+reset:
+	rm -f "$(PROCESSED)"
+	@echo "✖ Removed $(PROCESSED)"
 
 #################################################################################
 # Self Documenting Commands                                                     #

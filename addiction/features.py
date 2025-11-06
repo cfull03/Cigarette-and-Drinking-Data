@@ -161,14 +161,14 @@ REGISTRY: Final[FeatureRegistry] = FeatureRegistry()
     requires=(),
     produces=(),
     order=0,
-    desc="Drop 'id'; set index to 'name' (retaining column) if present.",
+    desc="Drop PII: remove 'id' and 'name' columns if present.",
 )
 def feat_basic_cleanup(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    if "id" in out.columns:
-        out = out.drop(columns=["id"])
-    if "name" in out.columns:
-        out = out.set_index("name", drop=False)
+    drop_cols = [c for c in ("id", "name") if c in out.columns]
+    if drop_cols:
+        out = out.drop(columns=drop_cols)
+    # No indexing by 'name' anymore.
     return out
 
 
