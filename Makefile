@@ -2,15 +2,21 @@
 # GLOBALS                                                                       #
 #################################################################################
 
-PROJECT_NAME = cigarette-and-drinking-data
-PYTHON_VERSION = 3.12
-PYTHON_INTERPRETER = python
+PROJECT_NAME      = cigarette-and-drinking-data
+PYTHON_VERSION    = 3.12
+PYTHON_INTERPRETER= python
 
-PROCESSED := data/processed/dataset.csv
+# Artifacts
+INTERIM    := data/interim/dataset.csv
+PROCESSED  := data/processed/dataset.csv
+PREP_INPUT := data/interim/dataset.prep.csv
 PREP_MODEL ?= models/preprocessor.joblib
-NUM_COLS ?=
-CAT_COLS ?=
-ENCODE_CAT ?= 1   # 1=enable OHE, 0=disable
+
+# Modeling knobs
+TARGET     ?= has_health_issues   # target to drop (also drops any '<target>_*')
+NUM_COLS   ?=
+CAT_COLS   ?=
+ENCODE_CAT ?= 1                   # 1=enable OHE, 0=disable
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -21,19 +27,20 @@ ENCODE_CAT ?= 1   # 1=enable OHE, 0=disable
 requirements:
 	conda env update --name $(PROJECT_NAME) --file environment.yml --prune
 
-## Delete all compiled Python files
+## Delete compiled files and temp preprocess input
 .PHONY: clean
 clean:
 	find . -type f -name "*.py[co]" -delete
 	find . -type d -name "__pycache__" -delete
+	rm -f "$(PREP_INPUT)"
 
-## Lint using ruff (use `make format` to do formatting)
+## Lint using ruff (use `make format` to auto-fix)
 .PHONY: lint
 lint:
 	ruff format --check
 	ruff check
 
-## Format source code with ruff
+## Auto-fix lint and format with ruff
 .PHONY: format
 format:
 	ruff check --fix
@@ -44,7 +51,7 @@ format:
 test:
 	$(PYTHON_INTERPRETER) -m pytest tests
 
-## Set up Python interpreter environment
+## Create conda environment
 .PHONY: create_environment
 create_environment:
 	conda env create --name $(PROJECT_NAME) -f environment.yml
@@ -54,58 +61,57 @@ create_environment:
 # PROJECT RULES                                                                 #
 #################################################################################
 
-## Make dataset at $(PROCESSED). If it exists, reuse it (no rebuild from raw).
+## Build INTERIM (raw -> interim). Reuse if present; else build from raw.
 .PHONY: data
 data: requirements
-	@if [ -f "$(PROCESSED)" ]; then \
-		echo "✔ Using existing $(PROCESSED)"; \
+	@if [ -f "$(INTERIM)" ]; then \
+		echo "✔ Using existing $(INTERIM)"; \
 	else \
-		echo "→ Building processed dataset from raw → $(PROCESSED)"; \
+		echo "→ Building interim dataset from raw → $(INTERIM)"; \
 		$(PYTHON_INTERPRETER) addiction/dataset.py \
-			--output-path "$(PROCESSED)"; \
+			--output-path "$(INTERIM)"; \
 	fi
 
-## Run feature engineering IN-PLACE on $(PROCESSED). If missing, build from raw first.
+## Feature engineering: INTERIM -> PROCESSED (drops TARGET + its OHEs)
 .PHONY: features
-features:
-	@if [ ! -f "$(PROCESSED)" ]; then \
-		echo "ℹ $(PROCESSED) missing; creating from raw first…"; \
-		$(PYTHON_INTERPRETER) addiction/dataset.py \
-			--output-path "$(PROCESSED)"; \
-	fi; \
-	echo "→ Applying features in-place to $(PROCESSED)"; \
+features: data
+	@echo "→ Applying features (target=$(TARGET)) $(INTERIM) → $(PROCESSED)"; \
 	$(PYTHON_INTERPRETER) addiction/features.py \
-		--input-path  "$(PROCESSED)" \
-		--output-path "$(PROCESSED)"
+		--input-path  "$(INTERIM)" \
+		--output-path "$(PROCESSED)" \
+		$(if $(strip $(TARGET)),--target "$(TARGET)",)
 
-## Fit+apply sklearn preprocessor IN-PLACE on $(PROCESSED).
-## If $(PROCESSED) missing, create it from raw first.
+## Preprocess: INTERIM -> PROCESSED
+## 1) Create temp PREP_INPUT by dropping target/OHEs (no other features)
+## 2) Fit+transform -> PROCESSED
 .PHONY: preprocess
-preprocess:
-	@if [ ! -f "$(PROCESSED)" ]; then \
-		echo "ℹ $(PROCESSED) missing; creating from raw first…"; \
-		$(PYTHON_INTERPRETER) addiction/dataset.py \
-			--output-path "$(PROCESSED)"; \
-	fi; \
-	echo "→ Preprocessing in-place to $(PROCESSED)"; \
+preprocess: data
+	@echo "→ Preparing preprocess input by dropping target (target=$(TARGET))"; \
+	$(PYTHON_INTERPRETER) addiction/features.py \
+		--input-path  "$(INTERIM)" \
+		--output-path "$(PREP_INPUT)" \
+		$(if $(strip $(TARGET)),--target "$(TARGET)",) \
+		--only basic_cleanup; \
+	echo "→ Preprocessing $(PREP_INPUT) → $(PROCESSED)"; \
 	$(PYTHON_INTERPRETER) addiction/preprocessor.py \
 		--mode fit-transform \
-		--input-path  "$(PROCESSED)" \
+		--input-path  "$(PREP_INPUT)" \
 		--output-path "$(PROCESSED)" \
 		--model-path "$(PREP_MODEL)" \
 		$(if $(NUM_COLS),--num-cols "$(NUM_COLS)",) \
 		$(if $(CAT_COLS),--cat-cols "$(CAT_COLS)",) \
-		$(if $(filter 1,$(ENCODE_CAT)),--encode-cat,--no-encode-cat)
+		$(if $(filter 1,$(ENCODE_CAT)),--encode-cat,--no-encode-cat); \
+	rm -f "$(PREP_INPUT)" || true
 
-## Full pipeline (raw -> processed -> features -> preprocessed), all in $(PROCESSED)
+## Full pipeline: raw -> interim -> features -> processed(preprocessed)
 .PHONY: all
 all: data features preprocess
 
-## Remove processed artifact to force a fresh build next run
+## Remove artifacts to rebuild clean
 .PHONY: reset
 reset:
-	rm -f "$(PROCESSED)"
-	@echo "✖ Removed $(PROCESSED)"
+	rm -f "$(INTERIM)" "$(PROCESSED)" "$(PREP_INPUT)"
+	@echo "✖ Removed $(INTERIM), $(PROCESSED), $(PREP_INPUT)"
 
 #################################################################################
 # Self Documenting Commands                                                     #
@@ -122,5 +128,7 @@ print('\n'.join(['{:25}{}'.format(*reversed(match)) for match in matches]))
 endef
 export PRINT_HELP_PYSCRIPT
 
+## Show this help
+.PHONY: help
 help:
 	@$(PYTHON_INTERPRETER) -c "${PRINT_HELP_PYSCRIPT}" < $(MAKEFILE_LIST)

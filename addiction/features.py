@@ -1,7 +1,12 @@
 # filepath: addiction/features.py
 from __future__ import annotations
 
+"""
+Feature engineering utilities and CLI for the Cigarette & Drinking dataset.
+"""
+
 from dataclasses import dataclass, field
+import functools
 from pathlib import Path
 from typing import Callable, Final, Iterable, Optional, Set, TypeVar
 
@@ -11,7 +16,7 @@ import pandas as pd
 from tqdm import tqdm
 import typer
 
-from addiction.config import PROCESSED_DATA_DIR
+from addiction.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
 
 app = typer.Typer(help="Feature engineering CLI for the Cigarette & Drinking dataset.")
 
@@ -27,6 +32,17 @@ def _has_all(df: pd.DataFrame, cols: Iterable[str]) -> bool:
     return set(cols).issubset(df.columns)
 
 
+def _drop_target_cols(df: pd.DataFrame, target: str) -> pd.DataFrame:
+    """Drop target column and any existing one-hot columns with '<target>_' prefix."""
+    out = df.copy()
+    pref = f"{target}_"
+    to_drop = [c for c in out.columns if c == target or c.startswith(pref)]
+    if to_drop:
+        logger.info(f"Dropping target-derived columns: {to_drop}")
+        out = out.drop(columns=to_drop, errors="ignore")
+    return out
+
+
 # -----------------------------
 # FeatureSpec & Registry
 # -----------------------------
@@ -36,20 +52,10 @@ class FeatureError(RuntimeError):
 
 @dataclass(order=True, frozen=True)
 class FeatureSpec:
-    """
-    Declarative feature specification.
-
-    - `requires`: input columns needed; spec is skipped if missing.
-    - `produces`: columns created/overwritten by this spec.
-    - `order`: coarse ordering across specs.
-    - `enabled`: default on/off; can be overridden via CLI.
-    """
-    # non-default fields first (dataclass rule)
     order: int
     name: str = field(compare=False)
     func: Callable[[pd.DataFrame], pd.DataFrame] = field(compare=False)
 
-    # defaults after
     requires: Set[str] = field(default_factory=set, compare=False)
     produces: Set[str] = field(default_factory=set, compare=False)
     desc: str = field(default="", compare=False)
@@ -59,16 +65,26 @@ class FeatureSpec:
         return _has_all(df, self.requires)
 
     def apply(self, df: pd.DataFrame) -> pd.DataFrame:
-        if not self.applicable(df):
-            logger.warning(f"[skip:{self.name}] Missing columns: {self.requires - set(df.columns)}")
+        """
+        Apply the feature function with defensive logging.
+        The decorator already asserts presence of required columns and output type.
+        This method remains defensive: if something slips through, we log and return the input.
+        """
+        if not self.enabled:
+            logger.info(f"[disabled:{self.name}]")
             return df
+
+        if not self.applicable(df):
+            missing = self.requires - set(df.columns)
+            logger.warning(f"[skip:{self.name}] Missing columns: {sorted(missing)}")
+            return df
+
         try:
             out = self.func(df)
             if not isinstance(out, pd.DataFrame):
                 raise FeatureError(f"Feature '{self.name}' must return a DataFrame.")
             return out
         except Exception as exc:
-            # Why: keep pipeline running but make failure visible.
             logger.exception(f"[error:{self.name}] {exc}")
             return df
 
@@ -95,20 +111,61 @@ class FeatureRegistry:
         order: int = 100,
         desc: str = "",
         enabled: bool = True,
+        strict_produces: bool = False,
     ) -> Callable[[F], F]:
-        """Decorator factory to register a DataFrame->DataFrame feature."""
+        """
+        Decorator to register a feature function while preserving function metadata.
+        """
+        reqs = set(requires)
+        prods = set(produces)
+        feature_name = name
+
         def deco(func: F) -> F:
+            @functools.wraps(func)
+            def wrapper(df: pd.DataFrame) -> pd.DataFrame:
+                missing = reqs - set(df.columns)
+                # Explicit assertion as requested; swap to FeatureError if you prefer non-assert behavior.
+                if missing:
+                    raise AssertionError(
+                        f"[{feature_name}] Missing required columns: {sorted(missing)}"
+                    )
+
+                out = func(df)
+                if not isinstance(out, pd.DataFrame):
+                    raise FeatureError(f"Feature '{feature_name}' must return a DataFrame.")
+
+                if prods:
+                    missing_out = prods - set(out.columns)
+                    if missing_out:
+                        msg = (
+                            f"[{feature_name}] Declared 'produces' missing from output: "
+                            f"{sorted(missing_out)}"
+                        )
+                        if strict_produces:
+                            raise FeatureError(msg)
+                        else:
+                            logger.warning(msg)
+                return out
+
             spec = FeatureSpec(
-                name=name,
-                requires=set(requires),
-                produces=set(produces),
-                func=func,
+                name=feature_name,
+                requires=reqs,
+                produces=prods,
+                func=wrapper,  # <- store wrapper so checks always run
                 order=order,
                 desc=desc,
                 enabled=enabled,
             )
             self.register(spec)
-            return func
+
+            # Expose metadata on the callable for introspection/debugging.
+            setattr(wrapper, "__feature_spec__", spec)
+            setattr(wrapper, "__feature_name__", feature_name)
+            setattr(wrapper, "__feature_requires__", tuple(sorted(reqs)))
+            setattr(wrapper, "__feature_produces__", tuple(sorted(prods)))
+            setattr(wrapper, "__original_func__", func)
+
+            return wrapper 
         return deco
 
     def names(self) -> list[str]:
@@ -128,7 +185,7 @@ class FeatureRegistry:
         exclude: Optional[Set[str]] = None,
     ) -> pd.DataFrame:
         specs = list(self._specs.values())
-        specs.sort()  # dataclass(order=True): order then name
+        specs.sort()
 
         if only:
             missing = only - set(self._specs)
@@ -143,15 +200,11 @@ class FeatureRegistry:
 
         out = df.copy()
         for spec in specs:
-            if not spec.enabled:
-                logger.info(f"[disabled:{spec.name}]")
-                continue
             out = spec.apply(out)
         return out
 
 
 REGISTRY: Final[FeatureRegistry] = FeatureRegistry()
-
 
 # -----------------------------
 # Feature implementations
@@ -168,7 +221,6 @@ def feat_basic_cleanup(df: pd.DataFrame) -> pd.DataFrame:
     drop_cols = [c for c in ("id", "name") if c in out.columns]
     if drop_cols:
         out = out.drop(columns=drop_cols)
-    # No indexing by 'name' anymore.
     return out
 
 
@@ -188,7 +240,9 @@ def feat_income(df: pd.DataFrame) -> pd.DataFrame:
     out["income_band"] = pd.cut(inc, bins=bins, labels=labels, include_lowest=True, right=True)
 
     out["log_income"] = np.log1p(inc)
-    mu, sigma = inc.mean(), inc.std() or 1.0
+    mu, sigma = inc.mean(), inc.std()
+    if not np.isfinite(sigma) or sigma == 0:
+        sigma = 1.0
     out["income_z"] = (inc - mu) / sigma
     try:
         out["income_decile"] = pd.qcut(inc, 10, labels=False, duplicates="drop")
@@ -207,8 +261,10 @@ def feat_income(df: pd.DataFrame) -> pd.DataFrame:
 def feat_smoke_intensity(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["smoke_intensity"] = pd.cut(
-        out["smokes_per_day"], [0, 1, 5, 10, 20, np.inf],
-        labels=["none", "ultra", "light", "med", "heavy"], include_lowest=True
+        pd.to_numeric(out["smokes_per_day"], errors="coerce"),
+        [0, 1, 5, 10, 20, np.inf],
+        labels=["none", "ultra", "light", "med", "heavy"],
+        include_lowest=True,
     )
     return out
 
@@ -223,8 +279,10 @@ def feat_smoke_intensity(df: pd.DataFrame) -> pd.DataFrame:
 def feat_drink_intensity(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["drink_intensity"] = pd.cut(
-        out["drinks_per_week"], [0, 1, 7, 14, 28, np.inf],
-        labels=["none", "very_low", "low", "mod", "high"], include_lowest=True
+        pd.to_numeric(out["drinks_per_week"], errors="coerce"),
+        [0, 1, 7, 14, 28, np.inf],
+        labels=["none", "very_low", "low", "mod", "high"],
+        include_lowest=True,
     )
     return out
 
@@ -238,8 +296,10 @@ def feat_drink_intensity(df: pd.DataFrame) -> pd.DataFrame:
 )
 def feat_dependents_ratio(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    inc = pd.to_numeric(out["annual_income_usd"], errors="coerce")
-    out["dependents_ratio"] = (out["children_count"].fillna(0) + 1) / (inc.fillna(0) + 1)
+    kids = pd.to_numeric(out["children_count"], errors="coerce").fillna(0)
+    inc = pd.to_numeric(out["annual_income_usd"], errors="coerce").fillna(0)
+    # add 1 to avoid division by zero and dampen extremes
+    out["dependents_ratio"] = (kids + 1) / (inc + 1)
     return out
 
 
@@ -252,7 +312,9 @@ def feat_dependents_ratio(df: pd.DataFrame) -> pd.DataFrame:
 )
 def feat_quit_smoke(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out["quit_effort_smoke_norm"] = out["attempts_to_quit_smoking"] / (out["smokes_per_day"] + 1)
+    attempts = pd.to_numeric(out["attempts_to_quit_smoking"], errors="coerce").fillna(0)
+    per_day = pd.to_numeric(out["smokes_per_day"], errors="coerce").fillna(0)
+    out["quit_effort_smoke_norm"] = attempts / (per_day + 1)
     return out
 
 
@@ -265,7 +327,9 @@ def feat_quit_smoke(df: pd.DataFrame) -> pd.DataFrame:
 )
 def feat_quit_drink(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out["quit_effort_drink_norm"] = out["attempts_to_quit_drinking"] / (out["drinks_per_week"] + 1)
+    attempts = pd.to_numeric(out["attempts_to_quit_drinking"], errors="coerce").fillna(0)
+    per_week = pd.to_numeric(out["drinks_per_week"], errors="coerce").fillna(0)
+    out["quit_effort_drink_norm"] = attempts / (per_week + 1)
     return out
 
 
@@ -318,11 +382,15 @@ def feat_impute_therapy(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -----------------------------
-# Backward-compatible builder
+# Public builder
 # -----------------------------
-def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Build domain features via the FeatureSpec registry."""
-    return REGISTRY.build(df)
+def build_features(df: pd.DataFrame, target: Optional[str] = None) -> pd.DataFrame:
+    """
+    Build domain features via the FeatureSpec registry.
+    If `target` is provided, drop the target and any prefixed one-hot columns first.
+    """
+    work = _drop_target_cols(df, target) if target else df
+    return REGISTRY.build(work)
 
 
 # -----------------------------
@@ -330,8 +398,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 # -----------------------------
 @app.command()
 def main(
-    input_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "features.csv",
+    input_path: Path = INTERIM_DATA_DIR / "dataset.csv",
+    output_path: Path = PROCESSED_DATA_DIR / "datasset.csv",
     only: Optional[str] = typer.Option(
         None,
         help="Comma-separated feature names to run exclusively.",
@@ -340,8 +408,12 @@ def main(
         None,
         help="Comma-separated feature names to skip.",
     ),
+    target: Optional[str] = typer.Option(
+        None,
+        help="Target column name to drop (also drops any one-hot columns like '<target>_*').",
+    ),
 ) -> None:
-    """Load input CSV, build features, and write a new CSV."""
+    """Load CSV, (optionally) drop target(+OHE), build features, write CSV."""
     if not input_path.exists():
         typer.echo(f"[ERROR] Input not found: {input_path}")
         raise typer.Exit(code=1)
@@ -351,6 +423,9 @@ def main(
 
     logger.info(f"Loading: {input_path}")
     df = pd.read_csv(input_path)
+
+    if target:
+        df = _drop_target_cols(df, target)
 
     logger.info("Building features…")
     for _ in tqdm(range(1), total=1):

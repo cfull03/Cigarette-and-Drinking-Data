@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import typer
 
-from addiction.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
+from addiction.config import INTERIM_DATA_DIR, RAW_DATA_DIR
 
 app = typer.Typer(add_completion=False)  # single-command CLI
 
@@ -129,7 +129,7 @@ def main(
         help="Raw CSV path. If omitted, uses data/raw/addiction_population_data.csv",
     ),
     output_path: Path = typer.Option(
-        PROCESSED_DATA_DIR / "dataset.csv",
+        INTERIM_DATA_DIR / "dataset.csv",
         help="Where to write the processed dataset",
     ),
     summarize_only: bool = typer.Option(

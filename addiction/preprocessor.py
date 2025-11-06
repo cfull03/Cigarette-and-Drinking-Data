@@ -226,7 +226,7 @@ def main(
     num_cols: Optional[str] = typer.Option(None, help="Comma-separated numeric columns (override inference)."),
     cat_cols: Optional[str] = typer.Option(None, help="Comma-separated categorical columns (override inference)."),
     encode_cat: bool = typer.Option(True, "--encode-cat/--no-encode-cat", help="Enable OneHotEncoder for categoricals."),
-):
+) -> None:
     """
     fit: infer/build and fit preprocessor; save joblib.
     transform: load preprocessor; transform CSV; write features.
