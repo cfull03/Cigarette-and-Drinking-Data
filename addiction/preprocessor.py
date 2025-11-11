@@ -1,21 +1,14 @@
-"""
-scikit-learn preprocessing pipeline for DS/ML:
-
-- Numeric: SimpleImputer(median) → StandardScaler
-- Categorical: SimpleImputer(most_frequent) → OneHotEncoder (optional)
-- Auto column inference with CLI overrides
-- pandas output when supported; robust fallbacks otherwise
-"""
-
+# filepath: addiction/preprocessor.py
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, cast
+from typing import Iterable, List, Optional, Sequence, Tuple, Union, cast
 
 import joblib
 from loguru import logger
 import numpy as np
 import pandas as pd
+from scipy import sparse
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -24,253 +17,267 @@ import typer
 
 from addiction.config import MODELS_DIR, PROCESSED_DATA_DIR
 
-app = typer.Typer(help="scikit-learn preprocessor (SimpleImputer + StandardScaler + optional OneHotEncoder).")
+app = typer.Typer(help="scikit-learn preprocessor (SimpleImputer + StandardScaler + OneHotEncoder).")
 
 __all__ = [
-    # column utilities
     "infer_columns",
     "infer_column_types",
-    # builders & operations
     "build_preprocessor",
     "make_preprocessor",
     "fit_preprocessor",
     "transform_df",
     "get_feature_names_after_preprocessor",
-    # persistence
     "save_preprocessor",
     "load_preprocessor",
 ]
 
 # -----------------------------------------------------------------------------
-# Private helpers
+# Helpers
 # -----------------------------------------------------------------------------
 def _csv_to_list(arg: Optional[str]) -> Optional[List[str]]:
     if not arg:
         return None
     return [s.strip() for s in arg.split(",") if s.strip()]
 
-
 def _get_bound_cols(ct: ColumnTransformer, name: str) -> list[str]:
-    """Return currently bound columns for a transformer by name (mypy-safe)."""
     for n, _, cols in ct.transformers:
         if n == name:
             bound: Sequence[str] = cast(Sequence[str], cols)
             return list(bound)
     return []
 
+def _drop_target_cols(df: pd.DataFrame, target: Optional[str]) -> pd.DataFrame:
+    if not target:
+        return df.copy()
+    out = df.copy()
+    pref = f"{target}_"
+    to_drop = [c for c in out.columns if c == target or c.startswith(pref)]
+    if to_drop:
+        logger.info(f"[preprocessor] Dropping target-derived columns: {to_drop}")
+        out = out.drop(columns=to_drop, errors="ignore")
+    return out
 
-def _rebind_columns(
-    ct: ColumnTransformer,
-    *,
-    numeric_cols: Sequence[str],
-    categorical_cols: Sequence[str],
-) -> ColumnTransformer:
-    """Update ColumnTransformer selections. Why: mypy-safe, avoids mutation surprises."""
-    new_transformers: List[tuple] = []
-    for name, trans, cols in ct.transformers:
-        if name == "num":
-            new_transformers.append((name, trans, list(numeric_cols)))
-        elif name == "cat":
-            new_transformers.append((name, trans, list(categorical_cols)))
-        else:
-            new_transformers.append((name, trans, cols))
-    ct.transformers = new_transformers  # type: ignore[attr-defined]
-    return ct
-
+def _ensure_dataframe(
+    X: Union[pd.DataFrame, np.ndarray, "sparse.spmatrix", Sequence[Sequence[object]]],
+    index: Optional[pd.Index],
+    columns: Optional[Iterable[str]],
+) -> pd.DataFrame:
+    cols = list(columns) if columns is not None else None
+    if sparse.issparse(X):
+        X = X.tocsr()
+        return pd.DataFrame.sparse.from_spmatrix(X, index=index, columns=cols)
+    if isinstance(X, np.ndarray):
+        return pd.DataFrame(X, index=index, columns=cols)
+    if isinstance(X, pd.DataFrame):
+        if cols is not None and list(X.columns) != cols:
+            X = X.copy()
+            X.columns = cols
+        return X
+    return pd.DataFrame(X, index=index, columns=cols)
 
 # -----------------------------------------------------------------------------
-# Public API
+# Column inference & partitioning
 # -----------------------------------------------------------------------------
 def infer_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
-    """Infer numeric and categorical columns."""
     num = df.select_dtypes(include=[np.number]).columns.tolist()
     cat = df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
     return num, cat
 
+infer_column_types = infer_columns
 
-def infer_column_types(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
-    """Alias for infer_columns(df)."""
-    return infer_columns(df)
+def _partition_all_nan(df: pd.DataFrame, cols: Sequence[str]) -> Tuple[List[str], List[str]]:
+    some, all_nan = [], []
+    for c in cols:
+        (some if df[c].notna().any() else all_nan).append(c)
+    return some, all_nan
 
+def _make_ohe() -> OneHotEncoder:
+    try:
+        return OneHotEncoder(handle_unknown="ignore", sparse_output=True)
+    except TypeError:  # sklearn < 1.2
+        return OneHotEncoder(handle_unknown="ignore", sparse=True)  # type: ignore[call-arg]
 
+# -----------------------------------------------------------------------------
+# Build / Fit / Transform
+# -----------------------------------------------------------------------------
 def build_preprocessor(
     *,
     numeric_cols: Optional[Sequence[str]] = None,
     categorical_cols: Optional[Sequence[str]] = None,
-    encode_categoricals: bool = True,
+    encode_categoricals: bool = True,  # kept for CLI compatibility; currently ignored
 ) -> ColumnTransformer:
     """
-    Factory for a ColumnTransformer with numeric + categorical branches.
+    Deprecated low-info builder (kept for API). Prefer `fit_preprocessor(df, ...)` which
+    partitions columns to avoid all-NaN median warnings.
     """
+    # numeric: median → fallback constant(0) → scale
     num_pipe = Pipeline(
         steps=[
-            ("imputer", SimpleImputer(strategy="median")),
+            ("imputer_median", SimpleImputer(strategy="median")),
+            ("imputer_fallback", SimpleImputer(strategy="constant", fill_value=0.0)),
             ("scaler", StandardScaler()),
         ]
     )
-
-    if encode_categoricals:
-        try:
-            ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-        except TypeError:
-            ohe = OneHotEncoder(handle_unknown="ignore", sparse=False)  # type: ignore[call-arg]
-        cat_pipe = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("ohe", ohe),
-            ]
-        )
-    else:
-        cat_pipe = Pipeline([("imputer", SimpleImputer(strategy="most_frequent"))])
-
+    # categorical: most_frequent + OHE (sparse)
+    cat_pipe = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("ohe", _make_ohe()),
+        ]
+    )
     ncols = list(numeric_cols) if numeric_cols else []
     ccols = list(categorical_cols) if categorical_cols else []
-
     ct = ColumnTransformer(
-        transformers=[
-            ("num", num_pipe, ncols),
-            ("cat", cat_pipe, ccols),
-        ],
+        transformers=[("num", num_pipe, ncols), ("cat", cat_pipe, ccols)],
         remainder="drop",
         verbose_feature_names_out=False,
     )
-    try:
-        ct.set_output(transform="pandas")  # sklearn>=1.2
-    except Exception:
-        pass
     return ct
 
-
-# friendly alias to match other modules' naming
+# alias
 make_preprocessor = build_preprocessor
-
 
 def fit_preprocessor(
     df: pd.DataFrame,
     *,
     numeric_cols: Optional[Sequence[str]] = None,
     categorical_cols: Optional[Sequence[str]] = None,
-    encode_categoricals: bool = True,
+    encode_categoricals: bool = True,  # ignored
 ) -> ColumnTransformer:
-    """Build and fit the preprocessor on df (call on TRAIN ONLY to avoid leakage)."""
+    """
+    Build a preprocessor that **avoids median-imputer warnings** by separating
+    all-NaN columns into a constant-impute branch.
+    """
     if numeric_cols is None or categorical_cols is None:
         inf_num, inf_cat = infer_columns(df)
         numeric_cols = inf_num if numeric_cols is None else list(numeric_cols)
         categorical_cols = inf_cat if categorical_cols is None else list(categorical_cols)
 
-    ct = build_preprocessor(
-        numeric_cols=numeric_cols,
-        categorical_cols=categorical_cols,
-        encode_categoricals=encode_categoricals,
+    num_some, num_all_nan = _partition_all_nan(df, numeric_cols)
+    cat_some, cat_all_nan = _partition_all_nan(df, categorical_cols)
+
+    if num_all_nan or cat_all_nan:
+        logger.warning(
+            "All-NaN columns detected; using constant imputation. "
+            f"num_all_nan={num_all_nan} cat_all_nan={cat_all_nan}"
+        )
+
+    # Pipelines
+    num_some_pipe = Pipeline(
+        steps=[("imputer_median", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]
     )
-    _rebind_columns(ct, numeric_cols=numeric_cols, categorical_cols=categorical_cols)
+    num_all_nan_pipe = Pipeline(
+        steps=[("imputer_const0", SimpleImputer(strategy="constant", fill_value=0.0)), ("scaler", StandardScaler())]
+    )
+    cat_some_pipe = Pipeline(
+        steps=[("imputer", SimpleImputer(strategy="most_frequent")), ("ohe", _make_ohe())]
+    )
+    cat_all_nan_pipe = Pipeline(
+        steps=[("imputer_const", SimpleImputer(strategy="constant", fill_value="missing")), ("ohe", _make_ohe())]
+    )
+
+    transformers: List[tuple] = []
+    if num_some:
+        transformers.append(("num_median", num_some_pipe, list(num_some)))
+    if num_all_nan:
+        transformers.append(("num_const", num_all_nan_pipe, list(num_all_nan)))
+    if cat_some:
+        transformers.append(("cat_freq", cat_some_pipe, list(cat_some)))
+    if cat_all_nan:
+        transformers.append(("cat_const", cat_all_nan_pipe, list(cat_all_nan)))
+
+    if not transformers:
+        raise ValueError("No columns to preprocess.")
+
+    ct = ColumnTransformer(
+        transformers=transformers,
+        remainder="drop",
+        verbose_feature_names_out=False,
+    )
     ct.fit(df)
+
+    # Persist fitted column lists (flattened)
+    setattr(ct, "_num_cols", list(numeric_cols))
+    setattr(ct, "_cat_cols", list(categorical_cols))
     return ct
 
+def _feature_names_after_ohe(ct: ColumnTransformer) -> List[str]:
+    try:
+        return list(ct.get_feature_names_out())
+    except Exception:
+        num = cast(List[str], getattr(ct, "_num_cols", []))
+        cat = cast(List[str], getattr(ct, "_cat_cols", []))
+        names: List[str] = list(num)
+        try:
+            for name, trans, _ in getattr(ct, "transformers_", []):
+                if "cat" in name and isinstance(trans, Pipeline) and "ohe" in trans.named_steps:
+                    ohe = trans.named_steps["ohe"]
+                    names.extend(list(ohe.get_feature_names_out(cat)))
+            if len(names) == 0:
+                raise RuntimeError
+        except Exception:
+            names = [f"f{i}" for i in range(ct.transform(np.zeros((1, 0))).shape[1])]
+        return names
 
 def transform_df(
     df: pd.DataFrame,
     ct: ColumnTransformer,
     *,
-    numeric_cols: Optional[Sequence[str]] = None,
-    categorical_cols: Optional[Sequence[str]] = None,
+    numeric_cols: Optional[Sequence[str]] = None,      # ignored after fit
+    categorical_cols: Optional[Sequence[str]] = None,  # ignored after fit
 ) -> pd.DataFrame:
-    """
-    Apply a fitted preprocessor to df. If cols provided, rebind selections first.
-    """
-    if numeric_cols is not None or categorical_cols is not None:
-        current_num: List[str] = _get_bound_cols(ct, "num")
-        current_cat: List[str] = _get_bound_cols(ct, "cat")
+    X = ct.transform(df)
+    names = _feature_names_after_ohe(ct)
 
-        bound_num: List[str] = list(numeric_cols) if numeric_cols is not None else current_num
-        bound_cat: List[str] = list(categorical_cols) if categorical_cols is not None else current_cat
-        _rebind_columns(ct, numeric_cols=bound_num, categorical_cols=bound_cat)
+    width = X.shape[1] if hasattr(X, "shape") else len(names)
+    if len(names) != width:
+        logger.warning(
+            "[preprocessor] Feature name count (%d) != transformed width (%d); falling back to default.",
+            len(names), width,
+        )
+        names = None  # let pandas auto-range columns
 
-    out = ct.transform(df)
+    return _ensure_dataframe(X, index=df.index, columns=names)
 
-    if isinstance(out, pd.DataFrame):
-        return out  # pandas output path
-
-    # Fallback: construct names for numpy output
-    feature_names: List[str] = get_feature_names_after_preprocessor(
-        ct,
-        numeric_cols=_get_bound_cols(ct, "num"),
-        categorical_cols=_get_bound_cols(ct, "cat"),
-    )
-    return pd.DataFrame(out, columns=feature_names, index=df.index)
-
-
-def get_feature_names_after_preprocessor(
-    ct: ColumnTransformer,
-    *,
-    numeric_cols: Sequence[str],
-    categorical_cols: Sequence[str],
-) -> List[str]:
-    """
-    Recover feature names after a fitted ColumnTransformer (handles OHE if present).
-    """
-    names: List[str] = []
-    names.extend(list(numeric_cols))
-
-    try:
-        transformers = dict(ct.named_transformers_)
-        cat = transformers.get("cat")
-        if cat not in ("drop", "passthrough", None):
-            ohe = getattr(cat, "named_steps", {}).get("ohe")
-            if ohe is not None:
-                names.extend(ohe.get_feature_names_out(list(categorical_cols)).tolist())
-            else:
-                names.extend(list(categorical_cols))
-        elif cat == "passthrough":
-            names.extend(list(categorical_cols))
-    except Exception:
-        names.extend(list(categorical_cols))
-
-    return names
-
+def get_feature_names_after_preprocessor(ct: ColumnTransformer, *, numeric_cols: Sequence[str], categorical_cols: Sequence[str]) -> List[str]:
+    return _feature_names_after_ohe(ct)
 
 # -----------------------------------------------------------------------------
-# Persistence (Public API)
+# Persistence
 # -----------------------------------------------------------------------------
 def save_preprocessor(ct: ColumnTransformer, path: Path | str) -> None:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    p = Path(path); p.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(ct, p)
     logger.info(f"[preprocessor] saved → {p}")
 
-
 def load_preprocessor(path: Path | str) -> ColumnTransformer:
-    p = Path(path)
-    ct: ColumnTransformer = joblib.load(p)
+    p = Path(path); ct: ColumnTransformer = joblib.load(p)
     logger.info(f"[preprocessor] loaded ← {p}")
     return ct
 
-
-# -----------------------------
-# CLI (dataset.py style)
-# -----------------------------
+# -----------------------------------------------------------------------------
+# CLI
+# -----------------------------------------------------------------------------
 @app.command()
 def main(
     mode: str = typer.Option(..., help="fit | transform | fit-transform"),
     input_path: Path = typer.Option(PROCESSED_DATA_DIR / "dataset.csv", help="Input CSV."),
-    output_path: Path = typer.Option(PROCESSED_DATA_DIR / "features.csv", help="Output CSV for transform/fit-transform."),
+    output_path: Path = typer.Option(PROCESSED_DATA_DIR / "dataset.preprocessed.csv", help="Output CSV for transform/fit-transform."),
     model_path: Path = typer.Option(MODELS_DIR / "preprocessor.joblib", help="Where to save/load the fitted preprocessor."),
     num_cols: Optional[str] = typer.Option(None, help="Comma-separated numeric columns (override inference)."),
     cat_cols: Optional[str] = typer.Option(None, help="Comma-separated categorical columns (override inference)."),
-    encode_cat: bool = typer.Option(True, "--encode-cat/--no-encode-cat", help="Enable OneHotEncoder for categoricals."),
+    encode_cat: bool = typer.Option(True, "--encode-cat/--no-encode-cat", help="(kept for compat; ignored)."),
+    target: Optional[str] = typer.Option(None, help="If provided and column exists, drop target (+ any '<target>_*') before fitting/transforming."),
 ) -> None:
-    """
-    fit: infer/build and fit preprocessor; save joblib.
-    transform: load preprocessor; transform CSV; write features.
-    fit-transform: fit then transform same CSV; save joblib and features.
-    """
     if not input_path.exists():
         typer.echo(f"[ERROR] Input not found: {input_path}")
         raise typer.Exit(code=1)
 
-    df = pd.read_csv(input_path)
-    numeric_cols_list = _csv_to_list(num_cols)
-    categorical_cols_list = _csv_to_list(cat_cols)
+    df_raw = pd.read_csv(input_path)
+    df = _drop_target_cols(df_raw, target)
+
+    numeric_cols_list = _csv_to_list(num_cols) or None
+    categorical_cols_list = _csv_to_list(cat_cols) or None
 
     if mode == "fit":
         logger.info("Fitting preprocessor…")
@@ -278,7 +285,7 @@ def main(
             df,
             numeric_cols=numeric_cols_list,
             categorical_cols=categorical_cols_list,
-            encode_categoricals=encode_cat,
+            encode_categoricals=True,
         )
         save_preprocessor(ct, model_path)
         logger.success(f"Saved preprocessor → {model_path}")
@@ -286,15 +293,10 @@ def main(
     elif mode == "transform":
         logger.info("Loading preprocessor and transforming…")
         ct = load_preprocessor(model_path)
-        feats = transform_df(
-            df,
-            ct,
-            numeric_cols=numeric_cols_list,
-            categorical_cols=categorical_cols_list,
-        )
+        feats = transform_df(df, ct)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         feats.to_csv(output_path, index=False)
-        logger.success(f"Wrote features → {output_path}")
+        logger.success(f"Wrote preprocessed features → {output_path}")
 
     elif mode == "fit-transform":
         logger.info("Fitting, transforming, and saving…")
@@ -302,18 +304,16 @@ def main(
             df,
             numeric_cols=numeric_cols_list,
             categorical_cols=categorical_cols_list,
-            encode_categoricals=encode_cat,
+            encode_categoricals=True,
         )
-        feats = transform_df(df, ct)  # columns bound during fit
+        feats = transform_df(df, ct)
         save_preprocessor(ct, model_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         feats.to_csv(output_path, index=False)
-        logger.success(f"Saved preprocessor → {model_path} and features → {output_path}")
-
+        logger.success(f"Saved preprocessor → {model_path} and preprocessed features → {output_path}")
     else:
         typer.echo(f"[ERROR] Unknown mode: {mode} (use fit | transform | fit-transform)")
         raise typer.Exit(code=2)
-
 
 if __name__ == "__main__":
     app()

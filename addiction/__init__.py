@@ -1,10 +1,14 @@
 # filepath: addiction/__init__.py
 from __future__ import annotations
 
-# ---- Package version ----
+from importlib import import_module
+from typing import Any, Dict, Tuple
+
+# ---- Package version (no eager submodule imports) ----
 try:
     from importlib.metadata import PackageNotFoundError
     from importlib.metadata import version as _pkg_version
+
     try:
         __version__ = _pkg_version("addiction")
     except PackageNotFoundError:  # pragma: no cover
@@ -12,79 +16,58 @@ try:
 except Exception:  # pragma: no cover
     __version__ = "0.0.0"
 
-# ---- Public API re-exports ----
-# dataset
-from .dataset import (
-    basic_cleanup,
-    load_interim,
-    load_raw,
-    save_interim,
-    train_test_split_safe,
-)
-
-# eval
-from .eval import (
-    evaluate,
-    load_metrics,
-    save_metrics,
-)
-
-# features
-from .features import (
-    REGISTRY,
-    FeatureError,
-    FeatureRegistry,
-    FeatureSpec,
-    build_features,
-)
-
-# model
-from .model import (
-    build_model,
-    load_model,
-    save_model,
-    train_model,
-)
-
-# preprocessor
-from .preprocessor import (
-    get_feature_names_after_preprocessor,
-    infer_column_types,  # alias kept if implemented inside preprocessor
-    load_preprocessor,
-    make_preprocessor,
-    save_preprocessor,
-)
-
-__all__ = [
-    "__version__",
+# ---- Lazy public API ---------------------------------------------------------
+# Map exported names to (module, attribute) without importing modules at import time.
+EXPORTS: Dict[str, Tuple[str, str]] = {
     # dataset
-    "load_raw",
-    "basic_cleanup",
-    "save_interim",
-    "load_interim",
-    "train_test_split_safe",
+    "basic_cleanup": ("addiction.dataset", "basic_cleanup"),
+    "load_interim": ("addiction.dataset", "load_interim"),
+    "load_raw": ("addiction.dataset", "load_raw"),
+    "save_interim": ("addiction.dataset", "save_interim"),
+    "train_test_split_safe": ("addiction.dataset", "train_test_split_safe"),
     # features
-    "FeatureError",
-    "FeatureSpec",
-    "FeatureRegistry",
-    "REGISTRY",
-    "build_features",
+    "REGISTRY": ("addiction.features", "REGISTRY"),
+    "FeatureError": ("addiction.features", "FeatureError"),
+    "FeatureRegistry": ("addiction.features", "FeatureRegistry"),
+    "FeatureSpec": ("addiction.features", "FeatureSpec"),
+    "build_features": ("addiction.features", "build_features"),
     # preprocessor
-    "infer_column_types",
-    "make_preprocessor",
-    "save_preprocessor",
-    "load_preprocessor",
-    "get_feature_names_after_preprocessor",
+    "infer_column_types": ("addiction.preprocessor", "infer_column_types"),
+    "make_preprocessor": ("addiction.preprocessor", "make_preprocessor"),
+    "save_preprocessor": ("addiction.preprocessor", "save_preprocessor"),
+    "load_preprocessor": ("addiction.preprocessor", "load_preprocessor"),
+    "get_feature_names_after_preprocessor": ("addiction.preprocessor", "get_feature_names_after_preprocessor"),
     # model
-    "build_model",
-    "train_model",
-    "save_model",
-    "load_model",
-    # eval
-    "evaluate",
-    "save_metrics",
-    "load_metrics",
-    # decorators
-    "enforce_dense_float64",
-    "ensure_binary_labels",
-]
+    "build_model": ("addiction.model", "build_model"),
+    "train_model": ("addiction.model", "train_model"),
+    "save_model": ("addiction.model", "save_model"),
+    "load_model": ("addiction.model", "load_model"),
+    # eval (library helpers, not the CLI entrypoint)
+    "evaluate": ("addiction.eval", "evaluate"),
+    "save_metrics": ("addiction.eval", "save_metrics"),
+    "load_metrics": ("addiction.eval", "load_metrics"),
+}
+
+__all__ = ["__version__", *EXPORTS.keys()]
+
+
+def __getattr__(name: str) -> Any:
+    """
+    Lazily import and return the requested symbol the first time it is accessed.
+    Avoids importing submodules during `import addiction`, which eliminates
+    runpy warnings when executing `python -m addiction.<submodule>`.
+    """
+    if name in EXPORTS:
+        module_name, attr = EXPORTS[name]
+        module = import_module(module_name)
+        try:
+            value = getattr(module, attr)
+        except AttributeError as exc:  # pragma: no cover
+            raise AttributeError(f"{module_name!r} has no attribute {attr!r}") from exc
+        globals()[name] = value  # cache on module for subsequent access
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:  # pragma: no cover
+    return sorted(list(globals().keys()) + list(EXPORTS.keys()))

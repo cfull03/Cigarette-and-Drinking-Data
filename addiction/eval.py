@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, Tuple, cast
 
 from loguru import logger
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from scipy import sparse
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -20,53 +19,78 @@ from sklearn.metrics import (
 )
 import typer
 
-from addiction.config import INTERIM_DATA_DIR
+from addiction.config import PROCESSED_DATA_DIR
 from addiction.dataset import train_test_split_safe
 from addiction.model import load_model
+from addiction.preprocessor import (  # why: encode categoricals consistently
+    load_preprocessor,
+    transform_df,
+)
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 
-__all__ = ["evaluate", "save_metrics", "load_metrics"]
+__all__ = ["evaluate", "save_metrics", "load_metrics", "main"]
 
-# ---------- Helpers ----------
+# ---------- helpers ----------
+def _to_dense64(X: Any) -> npt.NDArray[np.float64]:
+    from scipy import sparse as _sp
+    arr: np.ndarray = X.toarray() if _sp.issparse(X) else np.asarray(X)
+    arr64: np.ndarray = arr.astype(np.float64, copy=False)
+    return cast(npt.NDArray[np.float64], arr64)
+
 def _to01(y: Any) -> npt.NDArray[np.int_]:
-    ya = np.asarray(y)
-    if ya.dtype == bool:
-        return cast(npt.NDArray[np.int_], ya.astype(np.int_, copy=False))
-    u = np.unique(ya)
+    arr: np.ndarray = np.asarray(y)
+    if arr.dtype == bool:
+        out: np.ndarray = arr.astype(np.int_, copy=False)
+        return cast(npt.NDArray[np.int_], out)
+    u = np.unique(arr)
     if set(u.tolist()) <= {0, 1}:
-        return cast(npt.NDArray[np.int_], ya.astype(np.int_, copy=False))
+        out = arr.astype(np.int_, copy=False)
+        return cast(npt.NDArray[np.int_], out)
     raise ValueError(f"Labels must be boolean or 0/1. Got uniques={u}")
 
-def _to_dense(X: Any) -> npt.NDArray[np.float64]:
-    if sparse.issparse(X):
-        arr = X.toarray().astype(np.float64, copy=False)
-        return cast(npt.NDArray[np.float64], arr)
-    arr = np.asarray(X, dtype=np.float64)
-    return cast(npt.NDArray[np.float64], arr)
+def _assert_has_target(df: pd.DataFrame, target: str) -> None:
+    if target not in df.columns:
+        cols_preview = ", ".join(map(str, list(df.columns[:12])))
+        raise KeyError(
+            f"Target column '{target}' not found in input CSV. "
+            f"Eval expects the FEATURES file (with target), not a preprocessed X-only file.\n"
+            f"Columns preview: [{cols_preview}{'...' if df.shape[1] > 12 else ''}]"
+        )
 
-# ---------- Public API ----------
+def _pos_class_index(model: Any) -> int:
+    # why: robustly pick positive class column when using predict_proba
+    if hasattr(model, "classes_"):
+        classes = list(model.classes_)
+        return classes.index(1) if 1 in classes else (len(classes) - 1)
+    return 1
+
+# ---------- public api ----------
 def evaluate(model: Any, X_test: Any, y_test: Any) -> Dict[str, object]:
-    """
-    Compute ROC-AUC, Accuracy, Precision, Recall, F1, and Confusion Matrix.
-    """
-    Xd: npt.NDArray[np.float64] = _to_dense(X_test)
+    Xd: npt.NDArray[np.float64] = _to_dense64(X_test)
     y01: npt.NDArray[np.int_] = _to01(y_test)
 
-    pred: npt.NDArray[np.int_] = cast(
-        npt.NDArray[np.int_],
-        np.asarray(model.predict(Xd), dtype=np.int_)
-    )
+    pred_arr: np.ndarray = np.asarray(model.predict(Xd), dtype=np.int_)
+    pred: npt.NDArray[np.int_] = cast(npt.NDArray[np.int_], pred_arr)
 
     scores: Optional[npt.NDArray[np.float64]] = None
     if hasattr(model, "predict_proba"):
-        p = model.predict_proba(Xd)[:, 1]
-        scores = cast(npt.NDArray[np.float64], np.asarray(p, dtype=np.float64))
+        idx = _pos_class_index(model)
+        proba1: np.ndarray = model.predict_proba(Xd)[:, idx]
+        scores_arr: np.ndarray = np.asarray(proba1, dtype=np.float64)
+        scores = cast(npt.NDArray[np.float64], scores_arr)
     elif hasattr(model, "decision_function"):
-        m = model.decision_function(Xd)
-        scores = cast(npt.NDArray[np.float64], np.asarray(m, dtype=np.float64))
+        margin: np.ndarray = model.decision_function(Xd)
+        scores_arr = np.asarray(margin, dtype=np.float64)
+        scores = cast(npt.NDArray[np.float64], scores_arr)
 
-    auc: Optional[float] = float(roc_auc_score(y01, scores)) if scores is not None else None
+    auc: Optional[float] = None
+    try:
+        if scores is not None:
+            auc = float(roc_auc_score(y01, scores))
+    except Exception as e:
+        logger.warning(f"ROC AUC unavailable: {e}")
+
     acc = float(accuracy_score(y01, pred))
     prec = float(precision_score(y01, pred, zero_division=0))
     rec = float(recall_score(y01, pred, zero_division=0))
@@ -100,32 +124,49 @@ def load_metrics(path: Path | str) -> Dict[str, object]:
     logger.info(f"Loaded metrics from {p}")
     return data
 
-# ---------- CLI ----------
+# ---------- single subcommand named "main" ----------
 @app.command()
-def eval(
+def main(
     model_path: Path = typer.Option(Path("artifacts/rf/model.joblib"), help="Trained model path."),
-    target: str = typer.Option(..., help="Target column in interim CSV."),
-    input_csv: Path = typer.Option(INTERIM_DATA_DIR / "dataset.csv", help="Interim dataset CSV path."),
-    test_size: float = typer.Option(0.2, help="Test size for split."),
+    target: str = typer.Option(..., help="Target column (must exist in CSV)."),
+    input_csv: Path = typer.Option(
+        PROCESSED_DATA_DIR / "features.csv",
+        help="CSV including target column (features output).",
+    ),
+    test_size: float = typer.Option(0.2, help="Test size split."),
     random_state: int = typer.Option(42, help="Random seed."),
-    output_metrics: Path = typer.Option(Path("artifacts/rf/metrics.json"), help="Metrics JSON output."),
+    output_metrics: Path = typer.Option(Path("artifacts/rf/metrics.json"), help="Metrics JSON output path."),
+    preprocessor_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to fitted preprocessor.joblib. If provided, X is transformed before scoring.",
+    ),
 ) -> None:
-    """Load model + dataset, evaluate on TEST, save metrics JSON."""
     if not input_csv.exists():
-        raise FileNotFoundError(f"Interim CSV not found: {input_csv}")
+        raise FileNotFoundError(f"CSV not found: {input_csv}")
     df = pd.read_csv(input_csv)
-    logger.info(f"Loaded interim CSV: {input_csv} ({df.shape})")
+    logger.info(f"Loaded CSV for eval: {input_csv} ({df.shape})")
+    _assert_has_target(df, target)
 
-    _, Xte_raw, _, yte = train_test_split_safe(
+    # Hold-out split on the features CSV so we evaluate on unseen rows
+    _, Xte_raw, _, yte_raw = train_test_split_safe(
         df, target=target, test_size=test_size, random_state=random_state, stratify=True
     )
-    Xte_mat: npt.NDArray[np.float64] = _to_dense(Xte_raw.values)
+
+    # Optional: apply the exact same preprocessor used at train time
+    if preprocessor_path is not None:
+        if not preprocessor_path.exists():
+            raise FileNotFoundError(f"Preprocessor not found: {preprocessor_path}")
+        ct = load_preprocessor(preprocessor_path)
+        Xte_enc = transform_df(Xte_raw, ct)  # why: stringify/categorical columns → numeric features
+    else:
+        Xte_enc = Xte_raw  # assumes all-numeric
+
+    Xte_mat: npt.NDArray[np.float64] = _to_dense64(Xte_enc.values if hasattr(Xte_enc, "values") else Xte_enc)
+    yte: npt.NDArray[np.int_] = _to01(yte_raw)
 
     model = load_model(model_path)
     metrics = evaluate(model, Xte_mat, yte)
     save_metrics(metrics, output_metrics)
-
-    logger.info(f"Metrics: {metrics}")
     logger.success("Done.")
 
 if __name__ == "__main__":
