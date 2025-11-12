@@ -1,103 +1,73 @@
-"""
-addiction
-=========
-
-Lightweight top-level API for the project package.
-
-What you get on import:
-- Configured logger (from `config.py`, tqdm-aware if available)
-- Canonical CCDS paths (DATA_DIR, RAW_DATA_DIR, etc.)
-- `ensure_project_dirs()` helper
-- Package `__version__`
-"""
-
+# filepath: addiction/__init__.py
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable, Optional
+from importlib import import_module
+from typing import Any, Dict, Tuple
 
-# Expose the configured loguru logger (same instance configured in config)
-from loguru import logger as log  # noqa: F401
+# ---- Package version (no eager submodule imports) ----
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
 
-# Import config first so logging/paths are initialized once here.
-from . import config as _config  # noqa: F401
-
-# Re-export commonly used symbols from config
-from .config import (  # noqa: F401
-    DATA_DIR,
-    EXTERNAL_DATA_DIR,
-    FIGURES_DIR,
-    INTERIM_DATA_DIR,
-    MODELS_DIR,
-    PROCESSED_DATA_DIR,
-    PROJ_ROOT,
-    RAW_DATA_DIR,
-    REPORTS_DIR,
-    ensure_project_dirs,
-)
-
-# Package version (best-effort)
-try:  # Python 3.8+
-    from importlib.metadata import PackageNotFoundError, version
+    try:
+        __version__ = _pkg_version("addiction")
+    except PackageNotFoundError:  # pragma: no cover
+        __version__ = "0.0.0"
 except Exception:  # pragma: no cover
-    try:
-        from importlib_metadata import PackageNotFoundError, version  # type: ignore
-    except Exception:  # pragma: no cover
-        version = None  # type: ignore
-        PackageNotFoundError = Exception  # type: ignore
+    __version__ = "0.0.0"
+
+# ---- Lazy public API ---------------------------------------------------------
+# Map exported names to (module, attribute) without importing modules at import time.
+EXPORTS: Dict[str, Tuple[str, str]] = {
+    # dataset
+    "basic_cleanup": ("addiction.dataset", "basic_cleanup"),
+    "load_interim": ("addiction.dataset", "load_interim"),
+    "load_raw": ("addiction.dataset", "load_raw"),
+    "save_interim": ("addiction.dataset", "save_interim"),
+    "train_test_split_safe": ("addiction.dataset", "train_test_split_safe"),
+    # features
+    "REGISTRY": ("addiction.features", "REGISTRY"),
+    "FeatureError": ("addiction.features", "FeatureError"),
+    "FeatureRegistry": ("addiction.features", "FeatureRegistry"),
+    "FeatureSpec": ("addiction.features", "FeatureSpec"),
+    "build_features": ("addiction.features", "build_features"),
+    # preprocessor
+    "infer_column_types": ("addiction.preprocessor", "infer_column_types"),
+    "make_preprocessor": ("addiction.preprocessor", "make_preprocessor"),
+    "save_preprocessor": ("addiction.preprocessor", "save_preprocessor"),
+    "load_preprocessor": ("addiction.preprocessor", "load_preprocessor"),
+    "get_feature_names_after_preprocessor": ("addiction.preprocessor", "get_feature_names_after_preprocessor"),
+    # model
+    "build_model": ("addiction.model", "build_model"),
+    "train_model": ("addiction.model", "train_model"),
+    "save_model": ("addiction.model", "save_model"),
+    "load_model": ("addiction.model", "load_model"),
+    # eval (library helpers, not the CLI entrypoint)
+    "evaluate": ("addiction.eval", "evaluate"),
+    "save_metrics": ("addiction.eval", "save_metrics"),
+    "load_metrics": ("addiction.eval", "load_metrics"),
+}
+
+__all__ = ["__version__", *EXPORTS.keys()]
 
 
-def _get_version() -> str:
-    if version is None:
-        return "0.0.0"
-    try:
-        return version("addiction")
-    except PackageNotFoundError:
-        # Editable installs before build metadata exists, or running from source
-        return "0.0.0"
-
-
-__version__ = _get_version()
-
-
-def setup(extra_dirs: Optional[Iterable[Path]] = None) -> None:
+def __getattr__(name: str) -> Any:
     """
-    One-call convenience to ensure the CCDS directory tree exists.
-
-    Parameters
-    ----------
-    extra_dirs : Optional[Iterable[pathlib.Path]]
-        Any additional directories to create.
-
-    Examples
-    --------
-    >>> from addiction import setup
-    >>> setup()  # creates data/, reports/, models/, etc.
+    Lazily import and return the requested symbol the first time it is accessed.
+    Avoids importing submodules during `import addiction`, which eliminates
+    runpy warnings when executing `python -m addiction.<submodule>`.
     """
-    ensure_project_dirs(extra=extra_dirs)
-    log.info("addiction setup complete.")
+    if name in EXPORTS:
+        module_name, attr = EXPORTS[name]
+        module = import_module(module_name)
+        try:
+            value = getattr(module, attr)
+        except AttributeError as exc:  # pragma: no cover
+            raise AttributeError(f"{module_name!r} has no attribute {attr!r}") from exc
+        globals()[name] = value  # cache on module for subsequent access
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __repr__() -> str:  # pragma: no cover
-    return f"<addiction {__version__} root={PROJ_ROOT}>"
-
-__all__ = [
-    # version
-    "__version__",
-    # logger
-    "log",
-    # paths
-    "PROJ_ROOT",
-    "DATA_DIR",
-    "RAW_DATA_DIR",
-    "INTERIM_DATA_DIR",
-    "PROCESSED_DATA_DIR",
-    "EXTERNAL_DATA_DIR",
-    "MODELS_DIR",
-    "REPORTS_DIR",
-    "FIGURES_DIR",
-    # helpers
-    "ensure_project_dirs",
-    "setup",
-]
-
+def __dir__() -> list[str]:  # pragma: no cover
+    return sorted(list(globals().keys()) + list(EXPORTS.keys()))

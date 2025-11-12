@@ -188,4 +188,5 @@ cython_debug/
 .ruff_cache/
 
 # PyPI configuration file
-.pypirc
+.pypircnotebooks/exp-*.ipynb
+models/*.joblib
