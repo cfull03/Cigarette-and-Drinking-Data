@@ -5,7 +5,7 @@ from __future__ import annotations
 Feature engineering utilities and CLI for the Cigarette & Drinking dataset.
 """
 
-from dataclasses import dataclass, field  
+from dataclasses import dataclass, field
 import functools
 from pathlib import Path
 from typing import Callable, Final, Iterable, List, Optional, Set, TypeVar
@@ -41,7 +41,9 @@ def _has_all(df: pd.DataFrame, cols: Iterable[str]) -> bool:
 
 
 def _drop_target_cols(df: pd.DataFrame, target: str) -> pd.DataFrame:
-    """Drop target column and any existing one-hot columns with '<target>_' prefix."""
+    """Drop target column and any existing one-hot columns with '<target>_' prefix.
+    Why: prevent leakage when fitting preprocessors; not for general feature files.
+    """
     out = df.copy()
     pref = f"{target}_"
     to_drop = [c for c in out.columns if c == target or c.startswith(pref)]
@@ -73,11 +75,6 @@ class FeatureSpec:
         return _has_all(df, self.requires)
 
     def apply(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Apply the feature function with defensive logging.
-        The decorator already asserts presence of required columns and output type.
-        This method remains defensive: if something slips through, we log and return the input.
-        """
         if not self.enabled:
             logger.info(f"[disabled:{self.name}]")
             return df
@@ -121,9 +118,6 @@ class FeatureRegistry:
         enabled: bool = True,
         strict_produces: bool = False,
     ) -> Callable[[F], F]:
-        """
-        Decorator to register a feature function while preserving function metadata.
-        """
         reqs = set(requires)
         prods = set(produces)
         feature_name = name
@@ -132,7 +126,6 @@ class FeatureRegistry:
             @functools.wraps(func)
             def wrapper(df: pd.DataFrame) -> pd.DataFrame:
                 missing = reqs - set(df.columns)
-                # Explicit assertion as requested; swap to FeatureError if you prefer non-assert behavior.
                 if missing:
                     raise AssertionError(
                         f"[{feature_name}] Missing required columns: {sorted(missing)}"
@@ -159,7 +152,7 @@ class FeatureRegistry:
                 name=feature_name,
                 requires=reqs,
                 produces=prods,
-                func=wrapper,  # <- store wrapper so checks always run
+                func=wrapper,
                 order=order,
                 desc=desc,
                 enabled=enabled,
@@ -306,7 +299,6 @@ def feat_dependents_ratio(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     kids = pd.to_numeric(out["children_count"], errors="coerce").fillna(0)
     inc = pd.to_numeric(out["annual_income_usd"], errors="coerce").fillna(0)
-    # add 1 to avoid division by zero and dampen extremes
     out["dependents_ratio"] = (kids + 1) / (inc + 1)
     return out
 
@@ -395,10 +387,11 @@ def feat_impute_therapy(df: pd.DataFrame) -> pd.DataFrame:
 def build_features(df: pd.DataFrame, target: Optional[str] = None) -> pd.DataFrame:
     """
     Build domain features via the FeatureSpec registry.
-    If `target` is provided, drop the target and any prefixed one-hot columns first.
+    NOTE: target is not dropped here. Use CLI --drop-target if you need X-only.
     """
-    work = _drop_target_cols(df, target) if target else df
-    return REGISTRY.build(work)
+    if target is not None:
+        logger.debug("build_features(target=...) is ignored; target is not dropped here.")
+    return REGISTRY.build(df)
 
 
 __all__ = [
@@ -416,7 +409,7 @@ __all__ = [
 @app.command()
 def main(
     input_path: Path = INTERIM_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "dataset.csv",  # fixed typo
+    output_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
     only: Optional[str] = typer.Option(
         None,
         help="Comma-separated feature names to run exclusively.",
@@ -427,13 +420,17 @@ def main(
     ),
     target: Optional[str] = typer.Option(
         None,
-        help="Target column name to drop (also drops any one-hot columns like '<target>_*').",
+        help="Target column name (used only when --drop-target is set).",
+    ),
+    drop_target: bool = typer.Option(
+        False,
+        help="If set, drop target and any '<target>_*' columns before building features.",
     ),
     list_features: bool = typer.Option(
         False, "--list", "-l", help="List available features (by order) and exit."
     ),
 ) -> None:
-    """Load CSV, (optionally) drop target(+OHE), build features, write CSV."""
+    """Load CSV, optionally drop target(+OHE) for X-only, build features, write CSV."""
     if list_features:
         specs: List[FeatureSpec] = sorted(REGISTRY._specs.values())  # type: ignore[attr-defined]
         for s in specs:
@@ -451,8 +448,14 @@ def main(
     logger.info(f"Loading: {input_path}")
     df = pd.read_csv(input_path)
 
-    if target:
+    # Drop only when explicitly requested
+    if drop_target:
+        if not target:
+            typer.echo("[ERROR] --drop-target requires --target <name>")
+            raise typer.Exit(code=2)
         df = _drop_target_cols(df, target)
+    elif target:
+        logger.warning("--target provided without --drop-target; leaving target in place.")
 
     logger.info("Building features…")
     for _ in tqdm(range(1), total=1):
