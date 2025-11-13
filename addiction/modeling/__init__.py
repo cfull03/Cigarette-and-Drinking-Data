@@ -9,10 +9,11 @@ EXPORTS: Dict[str, Tuple[str, str]] = {
     # Train CLI
     "train_main": ("addiction.modeling.train", "main"),
     "train_app": ("addiction.modeling.train", "app"),
-    # Predict CLI + helper
-    "predict_main": ("addiction.modeling.predict", "main"),
-    "predict_app": ("addiction.modeling.predict", "app"),
-    "predict_dataframe": ("addiction.modeling.predict", "predict_dataframe"),
+    # Predict CLI + helpers
+    "predict_main": ("addiction.predict", "main"),
+    "predict_app": ("addiction.predict", "app"),
+    "predict_df": ("addiction.predict", "predict_df"),
+    "predict_file": ("addiction.predict", "predict_file"),
 }
 
 __all__ = list(EXPORTS.keys())
@@ -23,7 +24,7 @@ def __getattr__(name: str) -> Any:
         mod_name, attr = EXPORTS[name]
         module = import_module(mod_name)
         value = getattr(module, attr)
-        globals()[name] = value  # cache
+        globals()[name] = value  # cache after first access
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

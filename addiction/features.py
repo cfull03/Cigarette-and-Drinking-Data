@@ -334,6 +334,63 @@ def feat_quit_drink(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @REGISTRY.feature(
+    name="risk_burden",
+    requires=("heavy_smoker_flag","heavy_drinker_flag","bmi_obese_flag","sleep_deficit","diet_score","exercise_score","mh_score","poly_use"),
+    produces=("risk_factor_count","elevated_risk_flag"),
+    order=68,
+    desc="Counts classic lifestyle risks; 1 if multiple risks present.",
+)
+def feat_risk_burden(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    hs = pd.to_numeric(out["heavy_smoker_flag"], errors="coerce") > 0
+    hd = pd.to_numeric(out["heavy_drinker_flag"], errors="coerce") > 0
+    ob = pd.to_numeric(out["bmi_obese_flag"], errors="coerce") > 0
+    sd = pd.to_numeric(out["sleep_deficit"], errors="coerce") > 1
+    ld = pd.to_numeric(out["diet_score"], errors="coerce") <= 1   # Poor/Fair
+    le = pd.to_numeric(out["exercise_score"], errors="coerce") <= 1  # None/Rarely
+    mh = pd.to_numeric(out["mh_score"], errors="coerce") >= 1    # Moderate/Poor
+    pu = pd.to_numeric(out["poly_use"], errors="coerce") > 0
+
+    risk_cols = pd.concat([hs, hd, ob, sd, ld, le, mh, pu], axis=1)
+    risk_cols.columns = ["hs","hd","ob","sd","ld","le","mh","pu"]
+    out["risk_factor_count"] = risk_cols.sum(axis=1, skipna=True)
+    out["elevated_risk_flag"] = (out["risk_factor_count"] >= 2).astype(int)
+    return out
+
+
+@REGISTRY.feature(
+    name="pack_years_transforms",
+    requires=("pack_years",),
+    produces=("pack_years_log","pack_years_sqrt","pack_years_sq"),
+    order=66,
+    desc="Log, sqrt, and squared transforms of pack-years.",
+)
+def feat_pack_years_xforms(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    pk = pd.to_numeric(out["pack_years"], errors="coerce")
+    out["pack_years_log"]  = np.log1p(pk)
+    out["pack_years_sqrt"] = np.sqrt(pk)
+    out["pack_years_sq"]   = pk ** 2
+    return out
+
+
+@REGISTRY.feature(
+    name="alcohol_transforms",
+    requires=("drinks_per_week",),
+    produces=("drink_per_day","drink_per_day_sq","drinks_per_week_log"),
+    order=67,
+    desc="Daily drinks, squared daily drinks, and log weekly drinks.",
+)
+def feat_alcohol_xforms(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    dpw = pd.to_numeric(out["drinks_per_week"], errors="coerce")
+    out["drink_per_day"]     = dpw / 7.0
+    out["drink_per_day_sq"]  = (dpw / 7.0) ** 2
+    out["drinks_per_week_log"] = np.log1p(dpw)
+    return out
+
+
+@REGISTRY.feature(
     name="impute_social_support",
     requires=("social_support", "marital_status", "children_count"),
     produces=("social_support",),
@@ -345,6 +402,38 @@ def feat_impute_social(df: pd.DataFrame) -> pd.DataFrame:
     grp = out.groupby(["marital_status", "children_count"])["social_support"].transform(_mode_safe)
     glob = _mode_safe(out["social_support"])
     out["social_support"] = out["social_support"].fillna(grp).fillna(glob)
+    return out
+
+
+@REGISTRY.feature(
+    name="heavy_poly_use",
+    requires=("smokes_per_day","drinks_per_week"),
+    produces=("heavy_poly_use",),
+    order=65,
+    desc="1 if heavy smoker (>=20/day) AND heavy drinker (>=14/wk).",
+)
+def feat_heavy_poly_use(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    spd = pd.to_numeric(out["smokes_per_day"], errors="coerce")
+    dpw = pd.to_numeric(out["drinks_per_week"], errors="coerce")
+    out["heavy_poly_use"] = ((spd >= 20) & (dpw >= 14)).astype(int)
+    return out
+
+
+@REGISTRY.feature(
+    name="duration_intensity_interactions",
+    requires=("years_smoking","smokes_per_day","heavy_smoker_flag"),
+    produces=("years_smoking_x_heavy","years_smoking_x_spd"),
+    order=70,
+    desc="Cumulative risk approximations for smoking.",
+)
+def feat_duration_intensity(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    ys  = pd.to_numeric(out["years_smoking"], errors="coerce")
+    spd = pd.to_numeric(out["smokes_per_day"], errors="coerce")
+    hsf = pd.to_numeric(out["heavy_smoker_flag"], errors="coerce")
+    out["years_smoking_x_heavy"] = ys * (hsf > 0)
+    out["years_smoking_x_spd"]   = ys * spd
     return out
 
 

@@ -1,3 +1,4 @@
+# environment.yml (cleaner & safer)
 name: cigarette-and-drinking-data
 channels:
   - conda-forge
@@ -18,5 +19,7 @@ dependencies:
   - pytest
   - mkdocs
   - python-dotenv
-  - pip:
-      - -e .
+  - xgboost
+  # ⬇️ remove the editable install from here to avoid PATH/pip mismatch during solve
+  # - pip:
+  #     - -e .
