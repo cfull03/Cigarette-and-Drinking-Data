@@ -1,4 +1,5 @@
 # filepath: addiction/__init__.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from importlib import import_module
@@ -37,12 +38,16 @@ EXPORTS: Dict[str, Tuple[str, str]] = {
     "save_preprocessor": ("addiction.preprocessor", "save_preprocessor"),
     "load_preprocessor": ("addiction.preprocessor", "load_preprocessor"),
     "get_feature_names_after_preprocessor": ("addiction.preprocessor", "get_feature_names_after_preprocessor"),
-    # model
+    # model core
     "build_model": ("addiction.model", "build_model"),
-    "train_model": ("addiction.model", "train_model"),
     "save_model": ("addiction.model", "save_model"),
     "load_model": ("addiction.model", "load_model"),
-    # eval (library helpers, not the CLI entrypoint)
+    # training (moved out of model.py)
+    "train_model": ("addiction.modeling.train", "train_model"),
+    # prediction helpers
+    "predict_df": ("addiction.predict", "predict_df"),
+    "predict_file": ("addiction.predict", "predict_file"),
+    # eval (library helpers, not the CLI entrypoint) — keep only if implemented
     "evaluate": ("addiction.eval", "evaluate"),
     "save_metrics": ("addiction.eval", "save_metrics"),
     "load_metrics": ("addiction.eval", "load_metrics"),
@@ -54,8 +59,7 @@ __all__ = ["__version__", *EXPORTS.keys()]
 def __getattr__(name: str) -> Any:
     """
     Lazily import and return the requested symbol the first time it is accessed.
-    Avoids importing submodules during `import addiction`, which eliminates
-    runpy warnings when executing `python -m addiction.<submodule>`.
+    Avoids importing submodules during `import addiction`.
     """
     if name in EXPORTS:
         module_name, attr = EXPORTS[name]
@@ -67,7 +71,9 @@ def __getattr__(name: str) -> Any:
         globals()[name] = value  # cache on module for subsequent access
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    # [exp-001]
 
 
 def __dir__() -> list[str]:  # pragma: no cover
     return sorted(list(globals().keys()) + list(EXPORTS.keys()))
+    # [exp-001]

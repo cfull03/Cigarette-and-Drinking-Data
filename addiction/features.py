@@ -1,11 +1,12 @@
 # filepath: addiction/features.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 """
 Feature engineering utilities and CLI for the Cigarette & Drinking dataset.
 """
 
-from dataclasses import dataclass, field  
+from dataclasses import dataclass, field
 import functools
 from pathlib import Path
 from typing import Callable, Final, Iterable, List, Optional, Set, TypeVar
@@ -41,7 +42,9 @@ def _has_all(df: pd.DataFrame, cols: Iterable[str]) -> bool:
 
 
 def _drop_target_cols(df: pd.DataFrame, target: str) -> pd.DataFrame:
-    """Drop target column and any existing one-hot columns with '<target>_' prefix."""
+    """Drop target column and any existing one-hot columns with '<target>_' prefix.
+    Why: prevent leakage when fitting preprocessors; not for general feature files.
+    """
     out = df.copy()
     pref = f"{target}_"
     to_drop = [c for c in out.columns if c == target or c.startswith(pref)]
@@ -73,11 +76,6 @@ class FeatureSpec:
         return _has_all(df, self.requires)
 
     def apply(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Apply the feature function with defensive logging.
-        The decorator already asserts presence of required columns and output type.
-        This method remains defensive: if something slips through, we log and return the input.
-        """
         if not self.enabled:
             logger.info(f"[disabled:{self.name}]")
             return df
@@ -121,9 +119,6 @@ class FeatureRegistry:
         enabled: bool = True,
         strict_produces: bool = False,
     ) -> Callable[[F], F]:
-        """
-        Decorator to register a feature function while preserving function metadata.
-        """
         reqs = set(requires)
         prods = set(produces)
         feature_name = name
@@ -132,7 +127,6 @@ class FeatureRegistry:
             @functools.wraps(func)
             def wrapper(df: pd.DataFrame) -> pd.DataFrame:
                 missing = reqs - set(df.columns)
-                # Explicit assertion as requested; swap to FeatureError if you prefer non-assert behavior.
                 if missing:
                     raise AssertionError(
                         f"[{feature_name}] Missing required columns: {sorted(missing)}"
@@ -159,7 +153,7 @@ class FeatureRegistry:
                 name=feature_name,
                 requires=reqs,
                 produces=prods,
-                func=wrapper,  # <- store wrapper so checks always run
+                func=wrapper,
                 order=order,
                 desc=desc,
                 enabled=enabled,
@@ -306,7 +300,6 @@ def feat_dependents_ratio(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     kids = pd.to_numeric(out["children_count"], errors="coerce").fillna(0)
     inc = pd.to_numeric(out["annual_income_usd"], errors="coerce").fillna(0)
-    # add 1 to avoid division by zero and dampen extremes
     out["dependents_ratio"] = (kids + 1) / (inc + 1)
     return out
 
@@ -342,6 +335,63 @@ def feat_quit_drink(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @REGISTRY.feature(
+    name="risk_burden",
+    requires=("heavy_smoker_flag","heavy_drinker_flag","bmi_obese_flag","sleep_deficit","diet_score","exercise_score","mh_score","poly_use"),
+    produces=("risk_factor_count","elevated_risk_flag"),
+    order=68,
+    desc="Counts classic lifestyle risks; 1 if multiple risks present.",
+)
+def feat_risk_burden(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    hs = pd.to_numeric(out["heavy_smoker_flag"], errors="coerce") > 0
+    hd = pd.to_numeric(out["heavy_drinker_flag"], errors="coerce") > 0
+    ob = pd.to_numeric(out["bmi_obese_flag"], errors="coerce") > 0
+    sd = pd.to_numeric(out["sleep_deficit"], errors="coerce") > 1
+    ld = pd.to_numeric(out["diet_score"], errors="coerce") <= 1   # Poor/Fair
+    le = pd.to_numeric(out["exercise_score"], errors="coerce") <= 1  # None/Rarely
+    mh = pd.to_numeric(out["mh_score"], errors="coerce") >= 1    # Moderate/Poor
+    pu = pd.to_numeric(out["poly_use"], errors="coerce") > 0
+
+    risk_cols = pd.concat([hs, hd, ob, sd, ld, le, mh, pu], axis=1)
+    risk_cols.columns = ["hs","hd","ob","sd","ld","le","mh","pu"]
+    out["risk_factor_count"] = risk_cols.sum(axis=1, skipna=True)
+    out["elevated_risk_flag"] = (out["risk_factor_count"] >= 2).astype(int)
+    return out
+
+
+@REGISTRY.feature(
+    name="pack_years_transforms",
+    requires=("pack_years",),
+    produces=("pack_years_log","pack_years_sqrt","pack_years_sq"),
+    order=66,
+    desc="Log, sqrt, and squared transforms of pack-years.",
+)
+def feat_pack_years_xforms(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    pk = pd.to_numeric(out["pack_years"], errors="coerce")
+    out["pack_years_log"]  = np.log1p(pk)
+    out["pack_years_sqrt"] = np.sqrt(pk)
+    out["pack_years_sq"]   = pk ** 2
+    return out
+
+
+@REGISTRY.feature(
+    name="alcohol_transforms",
+    requires=("drinks_per_week",),
+    produces=("drink_per_day","drink_per_day_sq","drinks_per_week_log"),
+    order=67,
+    desc="Daily drinks, squared daily drinks, and log weekly drinks.",
+)
+def feat_alcohol_xforms(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    dpw = pd.to_numeric(out["drinks_per_week"], errors="coerce")
+    out["drink_per_day"]     = dpw / 7.0
+    out["drink_per_day_sq"]  = (dpw / 7.0) ** 2
+    out["drinks_per_week_log"] = np.log1p(dpw)
+    return out
+
+
+@REGISTRY.feature(
     name="impute_social_support",
     requires=("social_support", "marital_status", "children_count"),
     produces=("social_support",),
@@ -353,6 +403,38 @@ def feat_impute_social(df: pd.DataFrame) -> pd.DataFrame:
     grp = out.groupby(["marital_status", "children_count"])["social_support"].transform(_mode_safe)
     glob = _mode_safe(out["social_support"])
     out["social_support"] = out["social_support"].fillna(grp).fillna(glob)
+    return out
+
+
+@REGISTRY.feature(
+    name="heavy_poly_use",
+    requires=("smokes_per_day","drinks_per_week"),
+    produces=("heavy_poly_use",),
+    order=65,
+    desc="1 if heavy smoker (>=20/day) AND heavy drinker (>=14/wk).",
+)
+def feat_heavy_poly_use(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    spd = pd.to_numeric(out["smokes_per_day"], errors="coerce")
+    dpw = pd.to_numeric(out["drinks_per_week"], errors="coerce")
+    out["heavy_poly_use"] = ((spd >= 20) & (dpw >= 14)).astype(int)
+    return out
+
+
+@REGISTRY.feature(
+    name="duration_intensity_interactions",
+    requires=("years_smoking","smokes_per_day","heavy_smoker_flag"),
+    produces=("years_smoking_x_heavy","years_smoking_x_spd"),
+    order=70,
+    desc="Cumulative risk approximations for smoking.",
+)
+def feat_duration_intensity(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    ys  = pd.to_numeric(out["years_smoking"], errors="coerce")
+    spd = pd.to_numeric(out["smokes_per_day"], errors="coerce")
+    hsf = pd.to_numeric(out["heavy_smoker_flag"], errors="coerce")
+    out["years_smoking_x_heavy"] = ys * (hsf > 0)
+    out["years_smoking_x_spd"]   = ys * spd
     return out
 
 
@@ -395,10 +477,11 @@ def feat_impute_therapy(df: pd.DataFrame) -> pd.DataFrame:
 def build_features(df: pd.DataFrame, target: Optional[str] = None) -> pd.DataFrame:
     """
     Build domain features via the FeatureSpec registry.
-    If `target` is provided, drop the target and any prefixed one-hot columns first.
+    NOTE: target is not dropped here. Use CLI --drop-target if you need X-only.
     """
-    work = _drop_target_cols(df, target) if target else df
-    return REGISTRY.build(work)
+    if target is not None:
+        logger.debug("build_features(target=...) is ignored; target is not dropped here.")
+    return REGISTRY.build(df)
 
 
 __all__ = [
@@ -416,7 +499,7 @@ __all__ = [
 @app.command()
 def main(
     input_path: Path = INTERIM_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "dataset.csv",  # fixed typo
+    output_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
     only: Optional[str] = typer.Option(
         None,
         help="Comma-separated feature names to run exclusively.",
@@ -427,13 +510,17 @@ def main(
     ),
     target: Optional[str] = typer.Option(
         None,
-        help="Target column name to drop (also drops any one-hot columns like '<target>_*').",
+        help="Target column name (used only when --drop-target is set).",
+    ),
+    drop_target: bool = typer.Option(
+        False,
+        help="If set, drop target and any '<target>_*' columns before building features.",
     ),
     list_features: bool = typer.Option(
         False, "--list", "-l", help="List available features (by order) and exit."
     ),
 ) -> None:
-    """Load CSV, (optionally) drop target(+OHE), build features, write CSV."""
+    """Load CSV, optionally drop target(+OHE) for X-only, build features, write CSV."""
     if list_features:
         specs: List[FeatureSpec] = sorted(REGISTRY._specs.values())  # type: ignore[attr-defined]
         for s in specs:
@@ -451,8 +538,14 @@ def main(
     logger.info(f"Loading: {input_path}")
     df = pd.read_csv(input_path)
 
-    if target:
+    # Drop only when explicitly requested
+    if drop_target:
+        if not target:
+            typer.echo("[ERROR] --drop-target requires --target <name>")
+            raise typer.Exit(code=2)
         df = _drop_target_cols(df, target)
+    elif target:
+        logger.warning("--target provided without --drop-target; leaving target in place.")
 
     logger.info("Building features…")
     for _ in tqdm(range(1), total=1):

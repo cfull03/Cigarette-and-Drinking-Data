@@ -1,4 +1,5 @@
 # filepath: addiction/dataset.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +30,7 @@ def _ensure_dirs(*paths: Path) -> None:
     """Create directories if missing. Why: mypy-safe Path-only API."""
     for p in paths:
         p.mkdir(parents=True, exist_ok=True)
+    # [exp-001]
 
 
 def _coerce_numeric(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
@@ -37,6 +39,7 @@ def _coerce_numeric(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
         if c in out.columns:
             out[c] = pd.to_numeric(out[c], errors="coerce")
     return out
+    # [exp-001]
 
 
 def _standardize_strings(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
@@ -45,6 +48,7 @@ def _standardize_strings(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
         if c in out.columns:
             out[c] = out[c].astype("string").str.strip().str.lower().replace({"": pd.NA})
     return out
+    # [exp-001]
 
 
 def _summarize_schema(df: pd.DataFrame) -> pd.DataFrame:
@@ -58,6 +62,7 @@ def _summarize_schema(df: pd.DataFrame) -> pd.DataFrame:
     )
     schema["null_pct"] = (schema["nulls"] / len(df) * 100).round(2)
     return schema.sort_values(["nulls", "column"], ascending=[False, True]).reset_index(drop=True)
+    # [exp-001]
 
 
 def _load_raw(default_name: str = "addiction_population_data.csv") -> pd.DataFrame:
@@ -69,6 +74,7 @@ def _load_raw(default_name: str = "addiction_population_data.csv") -> pd.DataFra
         )
     logger.info(f"Loading raw data: {raw_path}")
     return pd.read_csv(raw_path)
+    # [exp-001]
 
 
 def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
@@ -117,6 +123,7 @@ def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
         out.insert(0, "id", np.arange(1, len(out) + 1, dtype=int))
 
     return out
+    # [exp-001]
 
 
 def _write_processed(df: pd.DataFrame, output_path: Path) -> Path:
@@ -124,6 +131,7 @@ def _write_processed(df: pd.DataFrame, output_path: Path) -> Path:
     df.to_csv(output_path, index=False)
     logger.success(f"Wrote processed dataset → {output_path}")
     return output_path
+    # [exp-001]
 
 
 # -------------------------
@@ -149,6 +157,7 @@ def load_raw(path: Optional[Path] = None) -> pd.DataFrame:
         raise FileNotFoundError(f"Raw data not found: {resolved}")
     logger.info(f"Loading raw data: {resolved}")
     return pd.read_csv(resolved)
+    # [exp-001]
 
 
 def basic_cleanup(df: pd.DataFrame) -> pd.DataFrame:
@@ -166,6 +175,7 @@ def basic_cleanup(df: pd.DataFrame) -> pd.DataFrame:
     pd.DataFrame
     """
     return _basic_clean(df)
+    # [exp-001]
 
 
 def save_interim(df: pd.DataFrame, path: Optional[Path] = None) -> Path:
@@ -185,6 +195,7 @@ def save_interim(df: pd.DataFrame, path: Optional[Path] = None) -> Path:
     """
     output = (path or (INTERIM_DATA_DIR / "dataset.csv")).resolve()
     return _write_processed(df, output)
+    # [exp-001]
 
 
 def load_interim(path: Optional[Path] = None) -> pd.DataFrame:
@@ -205,6 +216,7 @@ def load_interim(path: Optional[Path] = None) -> pd.DataFrame:
         raise FileNotFoundError(f"Interim data not found: {resolved}")
     logger.info(f"Loading interim data: {resolved}")
     return pd.read_csv(resolved)
+    # [exp-001]
 
 
 def train_test_split_safe(
@@ -250,6 +262,7 @@ def train_test_split_safe(
         f"y_train={ytr.shape}, y_test={yte.shape}"
     )
     return Xtr, Xte, ytr, yte
+    # [exp-001]
 
 
 # -------------------------
@@ -292,6 +305,7 @@ def main(
     logger.info("Running basic_clean()…")
     df_proc = _basic_clean(df_raw)
     _write_processed(df_proc, output_path)
+    # [exp-001]
 
 
 if __name__ == "__main__":

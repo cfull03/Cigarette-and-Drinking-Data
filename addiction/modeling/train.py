@@ -1,4 +1,5 @@
 # filepath: addiction/modeling/train.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,28 +10,34 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from sklearn import metrics as skm
-from sklearn.ensemble import RandomForestClassifier
 import typer
 
 from addiction.dataset import train_test_split_safe
-from addiction.model import save_model  # reuse saver to keep a single artifact format
-from addiction.preprocessor import load_preprocessor, transform_df
+from addiction.model import build_model, save_model
+
+# optional; only used if a path is provided
+try:
+    from addiction.preprocessor import load_preprocessor, transform_df  # type: ignore
+except Exception:  # pragma: no cover
+    load_preprocessor = transform_df = None  # type: ignore
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
-__all__ = ["main"]
+__all__ = ["train_model", "app"]
 
 
 def _assert_no_target_in_X(df: pd.DataFrame, target: str) -> None:
     # why: prevents leakage & mismatched ColumnTransformer columns
     if target in df.columns:
         raise ValueError(f"Target '{target}' unexpectedly present in feature matrix.")
+    # [exp-001]
 
 
 def _to_dense64(X: pd.DataFrame | np.ndarray) -> npt.NDArray[np.float64]:
     from scipy import sparse as _sp  # local import to avoid hard dep at import time
     arr = X.toarray() if _sp.issparse(X) else np.asarray(X)
     return cast(npt.NDArray[np.float64], arr.astype(np.float64, copy=False))
+    # [exp-001]
 
 
 def _to01(y: pd.Series | np.ndarray) -> npt.NDArray[np.int_]:
@@ -41,6 +48,7 @@ def _to01(y: pd.Series | np.ndarray) -> npt.NDArray[np.int_]:
     if set(u.tolist()) <= {0, 1}:
         return cast(npt.NDArray[np.int_], arr.astype(np.int_, copy=False))
     raise ValueError(f"Labels must be boolean or 0/1. Got uniques={u}")
+    # [exp-001]
 
 
 def _apply_preprocessor_if_any(
@@ -50,11 +58,14 @@ def _apply_preprocessor_if_any(
     if preprocessor_path:
         if not preprocessor_path.exists():
             raise FileNotFoundError(f"Preprocessor not found: {preprocessor_path}")
+        if load_preprocessor is None or transform_df is None:
+            raise RuntimeError("Preprocessor module not available.")
         ct = load_preprocessor(preprocessor_path)
         Xtr = transform_df(Xtr_raw, ct)
         Xte = transform_df(Xte_raw, ct)
         return Xtr, Xte
     return Xtr_raw, Xte_raw
+    # [exp-001]
 
 
 def _compute_metrics(
@@ -68,10 +79,7 @@ def _compute_metrics(
         "recall": float(skm.recall_score(y_true, y_pred, zero_division=0)),
         "f1": float(skm.f1_score(y_true, y_pred, zero_division=0)),
         "confusion_matrix": skm.confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist(),
-        "support": {
-            "n": int(y_true.size),
-            "pos_rate": float(y_true.mean()),
-        },
+        "support": {"n": int(y_true.size), "pos_rate": float(y_true.mean())},
     }
     if proba_pos is not None and np.ndim(proba_pos) == 1:
         try:
@@ -80,13 +88,78 @@ def _compute_metrics(
         except Exception as e:
             logger.warning(f"Skipping probability-based metrics: {e}")
     return m
+    # [exp-001]
+
+
+def train_model(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    test_size: float = 0.2,
+    random_state: int = 42,
+    stratify: bool = True,
+    n_estimators: int = 500,
+    max_depth: Optional[int] = 5,
+    max_features: str = "sqrt",
+    min_samples_leaf: int = 1,
+    class_weight: Optional[str] = "balanced",
+    n_jobs: int = -1,
+    preprocessor_path: Optional[Path] = None,
+) -> Tuple[
+    Any,
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.int_],
+    npt.NDArray[np.int_],
+    Dict[str, Any],
+]:
+    """
+    Split → (optional) preprocess → fit RF via build_model → compute metrics.
+    Returns: (clf, Xtr, Xte, ytr, yte, metrics)
+    """
+    if df.empty:
+        raise ValueError("Training DataFrame is empty.")
+    if target not in df.columns:
+        raise KeyError(f"Target column '{target}' not found. Available: {list(df.columns)}")
+
+    Xtr_raw, Xte_raw, ytr_raw, yte_raw = train_test_split_safe(
+        df, target=target, test_size=test_size, random_state=random_state, stratify=stratify
+    )
+    _assert_no_target_in_X(Xtr_raw, target)
+    _assert_no_target_in_X(Xte_raw, target)
+
+    Xtr_df, Xte_df = _apply_preprocessor_if_any(Xtr_raw, Xte_raw, preprocessor_path)
+
+    Xtr = _to_dense64(Xtr_df.values)
+    Xte = _to_dense64(Xte_df.values)
+    ytr = _to01(ytr_raw)
+    yte = _to01(yte_raw)
+
+    clf = build_model(
+        Xtr,
+        ytr,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        max_features=max_features,
+        min_samples_leaf=min_samples_leaf,
+        class_weight=class_weight,
+        n_jobs=n_jobs,
+        random_state=random_state,
+    )
+
+    y_pred = clf.predict(Xte)
+    proba_pos = clf.predict_proba(Xte)[:, 1] if hasattr(clf, "predict_proba") else None
+    metrics = _compute_metrics(yte, y_pred, proba_pos)
+    logger.info(f"Train pos rate={float(ytr.mean()):.4f} | Test pos rate={float(yte.mean()):.4f}")
+    return clf, Xtr, Xte, ytr, yte, metrics
+    # [exp-001]
 
 
 @app.command("main")
 def main(
     input_csv: Path = typer.Option(
         Path("data/processed/features.csv"),
-        help="CSV with features (+ target column).",
+        help="CSV with features (+ target).",
         exists=True,
         readable=True,
     ),
@@ -97,11 +170,7 @@ def main(
     ),
     output_metrics: Path = typer.Option(
         Path("artifacts/rf/metrics.json"),
-        help="Where to write evaluation metrics JSON (on the held-out test split).",
-    ),
-    output_importances: Optional[Path] = typer.Option(
-        Path("artifacts/rf/feature_importances.csv"),
-        help="Optional CSV with feature importances (if supported). Set to empty to skip.",
+        help="Where to write evaluation metrics JSON.",
     ),
     # split
     test_size: float = typer.Option(0.2, help="Test size fraction.", min=0.05, max=0.95),
@@ -116,82 +185,42 @@ def main(
     n_jobs: int = typer.Option(-1),
     # preprocessing
     preprocessor_path: Optional[Path] = typer.Option(
-        Path("models/preprocessor.joblib"),
-        help="Fitted ColumnTransformer (fit on X only). If present, it's applied to X.",
+        None,
+        help="Fitted ColumnTransformer (fit on X only). If provided, apply to X.",
     ),
 ) -> None:
     """
     Train a RandomForest on tabular data, optionally using a saved preprocessor.
-    Saves: model (.joblib), metrics (.json), and optional feature importances (.csv).
+    Saves: model (.joblib) and metrics (.json).
     """
     df = pd.read_csv(input_csv)
-    if target not in df.columns:
-        raise ValueError(f"Target '{target}' not found in {input_csv}.")
     logger.info(f"Loaded data: {input_csv} shape={df.shape}")
 
-    # Split and guard against leakage
-    Xtr_raw, Xte_raw, ytr_raw, yte_raw = train_test_split_safe(
-        df, target=target, test_size=test_size, random_state=random_state, stratify=stratify
-    )
-    _assert_no_target_in_X(Xtr_raw, target)
-    _assert_no_target_in_X(Xte_raw, target)
-
-    # Optional preprocessing
-    Xtr_df, Xte_df = _apply_preprocessor_if_any(Xtr_raw, Xte_raw, preprocessor_path)
-
-    # Final matrices
-    Xtr = _to_dense64(Xtr_df.values)
-    Xte = _to_dense64(Xte_df.values)
-    ytr = _to01(ytr_raw)
-    yte = _to01(yte_raw)
-
-    # Fit model
-    clf = RandomForestClassifier(
+    clf, *_rest, metrics = train_model(
+        df,
+        target=target,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=stratify,
         n_estimators=n_estimators,
         max_depth=max_depth,
         max_features=max_features,
         min_samples_leaf=min_samples_leaf,
         class_weight=class_weight,
         n_jobs=n_jobs,
-        random_state=random_state,
+        preprocessor_path=preprocessor_path,
     )
-    logger.info("Fitting RandomForestClassifier…")
-    clf.fit(Xtr, ytr)
-    logger.success("Model trained.")
-    logger.info(f"Train pos rate={float(ytr.mean()):.4f} | Test pos rate={float(yte.mean()):.4f}")
 
-    # Evaluate
-    y_pred = clf.predict(Xte)
-    proba_pos = None
-    if hasattr(clf, "predict_proba"):
-        proba_pos = clf.predict_proba(Xte)[:, 1]
-    metrics = _compute_metrics(yte, y_pred, proba_pos)
-
-    # Save artifacts
     output_model.parent.mkdir(parents=True, exist_ok=True)
     save_model(clf, output_model)
 
     output_metrics.parent.mkdir(parents=True, exist_ok=True)
     pd.Series(metrics, dtype="object").to_json(output_metrics, indent=2)
+
+    logger.success(f"Saved model → {output_model}")
     logger.success(f"Wrote metrics → {output_metrics}")
-
-    if output_importances:
-        try:
-            fi = pd.DataFrame(
-                {
-                    "feature": getattr(Xtr_df, "columns", pd.RangeIndex(Xtr.shape[1])),
-                    "importance": clf.feature_importances_,
-                }
-            ).sort_values("importance", ascending=False)
-            output_importances.parent.mkdir(parents=True, exist_ok=True)
-            fi.to_csv(output_importances, index=False)
-            logger.success(f"Wrote feature importances → {output_importances} (top5: {fi.head(5).to_dict('records')})")
-        except Exception as e:
-            logger.warning(f"Skipping feature importances: {e}")
-
-    logger.success(f"Done. Model → {output_model}")
     logger.info(f"Summary metrics: {metrics}")
-    # keep stdout terse; details are in metrics.json
+    # [exp-001]
 
 
 if __name__ == "__main__":
