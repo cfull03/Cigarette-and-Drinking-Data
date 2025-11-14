@@ -1,4 +1,5 @@
 # --- filepath: addiction/model.py ---
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,6 +25,7 @@ def _to_dense64(X: Any) -> npt.NDArray[np.float64]:
     from scipy import sparse as _sp
     arr: np.ndarray = X.toarray() if _sp.issparse(X) else np.asarray(X)
     return cast(npt.NDArray[np.float64], arr.astype(np.float64, copy=False))
+    # [exp-001]
 
 
 def _to01(y: Any) -> npt.NDArray[np.int_]:
@@ -34,6 +36,7 @@ def _to01(y: Any) -> npt.NDArray[np.int_]:
     if set(u.tolist()) <= {0, 1}:
         return cast(npt.NDArray[np.int_], arr.astype(np.int_, copy=False))
     raise ValueError(f"Labels must be boolean or 0/1. Got uniques={u}")
+    # [exp-001]
 
 
 # ----------------------------
@@ -67,6 +70,7 @@ def build_model(
     clf.fit(Xd, y01)
     logger.success("Model trained.")
     return clf
+    # [exp-001]
 
 
 def save_model(model: Any, path: Path | str) -> Path:
@@ -76,6 +80,7 @@ def save_model(model: Any, path: Path | str) -> Path:
     dump(model, out)
     logger.success(f"Saved model → {out}")
     return out
+    # [exp-001]
 
 
 def load_model(path: Path | str) -> Any:
@@ -85,6 +90,7 @@ def load_model(path: Path | str) -> Any:
         raise FileNotFoundError(f"Model not found: {p}")
     logger.info(f"Loading model: {p}")
     return load(p)
+    # [exp-001]
 
 
 # ----------------------------
@@ -146,6 +152,7 @@ def main(
     save_model(clf, output_model)
     logger.success(f"Done. Model → {output_model}")
     logger.info(f"Summary metrics: {metrics}")
+    # [exp-001]
 
 
 if __name__ == "__main__":

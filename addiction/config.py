@@ -1,4 +1,5 @@
 # filepath: addiction/config.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 """
 Project-wide configuration and paths for the CCDS layout.
 
@@ -28,6 +29,7 @@ load_dotenv()
 def _getenv_str(name: str, default: str) -> str:
     v = os.getenv(name)
     return v if v is not None and v != "" else default
+    # [exp-001]
 
 def _getenv_int(name: str, default: int) -> int:
     v = os.getenv(name)
@@ -36,6 +38,7 @@ def _getenv_int(name: str, default: int) -> int:
     except Exception:
         logger.warning(f"Invalid int for {name}={v!r}; using default {default}")
         return default
+    # [exp-001]
 
 def _getenv_float(name: str, default: float) -> float:
     v = os.getenv(name)
@@ -44,12 +47,14 @@ def _getenv_float(name: str, default: float) -> float:
     except Exception:
         logger.warning(f"Invalid float for {name}={v!r}; using default {default}")
         return default
+    # [exp-001]
 
 def _getenv_bool(name: str, default: bool) -> bool:
     v = os.getenv(name)
     if v is None or v == "":
         return default
     return str(v).strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+    # [exp-001]
 
 # -----------------------------------------------------------------------------
 # Paths
