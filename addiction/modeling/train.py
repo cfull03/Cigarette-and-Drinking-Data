@@ -1,4 +1,5 @@
 # filepath: addiction/modeling/train.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,12 +30,14 @@ def _assert_no_target_in_X(df: pd.DataFrame, target: str) -> None:
     # why: prevents leakage & mismatched ColumnTransformer columns
     if target in df.columns:
         raise ValueError(f"Target '{target}' unexpectedly present in feature matrix.")
+    # [exp-001]
 
 
 def _to_dense64(X: pd.DataFrame | np.ndarray) -> npt.NDArray[np.float64]:
     from scipy import sparse as _sp  # local import to avoid hard dep at import time
     arr = X.toarray() if _sp.issparse(X) else np.asarray(X)
     return cast(npt.NDArray[np.float64], arr.astype(np.float64, copy=False))
+    # [exp-001]
 
 
 def _to01(y: pd.Series | np.ndarray) -> npt.NDArray[np.int_]:
@@ -45,6 +48,7 @@ def _to01(y: pd.Series | np.ndarray) -> npt.NDArray[np.int_]:
     if set(u.tolist()) <= {0, 1}:
         return cast(npt.NDArray[np.int_], arr.astype(np.int_, copy=False))
     raise ValueError(f"Labels must be boolean or 0/1. Got uniques={u}")
+    # [exp-001]
 
 
 def _apply_preprocessor_if_any(
@@ -61,6 +65,7 @@ def _apply_preprocessor_if_any(
         Xte = transform_df(Xte_raw, ct)
         return Xtr, Xte
     return Xtr_raw, Xte_raw
+    # [exp-001]
 
 
 def _compute_metrics(
@@ -83,6 +88,7 @@ def _compute_metrics(
         except Exception as e:
             logger.warning(f"Skipping probability-based metrics: {e}")
     return m
+    # [exp-001]
 
 
 def train_model(
@@ -146,6 +152,7 @@ def train_model(
     metrics = _compute_metrics(yte, y_pred, proba_pos)
     logger.info(f"Train pos rate={float(ytr.mean()):.4f} | Test pos rate={float(yte.mean()):.4f}")
     return clf, Xtr, Xte, ytr, yte, metrics
+    # [exp-001]
 
 
 @app.command("main")
@@ -213,6 +220,7 @@ def main(
     logger.success(f"Saved model → {output_model}")
     logger.success(f"Wrote metrics → {output_metrics}")
     logger.info(f"Summary metrics: {metrics}")
+    # [exp-001]
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 # filepath: addiction/__init__.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from importlib import import_module
@@ -70,7 +71,9 @@ def __getattr__(name: str) -> Any:
         globals()[name] = value  # cache on module for subsequent access
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    # [exp-001]
 
 
 def __dir__() -> list[str]:  # pragma: no cover
     return sorted(list(globals().keys()) + list(EXPORTS.keys()))
+    # [exp-001]

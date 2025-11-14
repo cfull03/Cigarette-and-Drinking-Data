@@ -1,4 +1,5 @@
 # filepath: addiction/preprocessor.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from pathlib import Path
@@ -38,6 +39,7 @@ def _csv_to_list(arg: Optional[str]) -> Optional[List[str]]:
     if not arg:
         return None
     return [s.strip() for s in arg.split(",") if s.strip()]
+    # [exp-001]
 
 def _get_bound_cols(ct: ColumnTransformer, name: str) -> list[str]:
     for n, _, cols in ct.transformers:
@@ -45,6 +47,7 @@ def _get_bound_cols(ct: ColumnTransformer, name: str) -> list[str]:
             bound: Sequence[str] = cast(Sequence[str], cols)
             return list(bound)
     return []
+    # [exp-001]
 
 def _drop_target_cols(df: pd.DataFrame, target: Optional[str]) -> pd.DataFrame:
     if not target:
@@ -56,6 +59,7 @@ def _drop_target_cols(df: pd.DataFrame, target: Optional[str]) -> pd.DataFrame:
         logger.info(f"[preprocessor] Dropping target-derived columns: {to_drop}")
         out = out.drop(columns=to_drop, errors="ignore")
     return out
+    # [exp-001]
 
 def _ensure_dataframe(
     X: Union[pd.DataFrame, np.ndarray, "sparse.spmatrix", Sequence[Sequence[object]]],
@@ -74,6 +78,7 @@ def _ensure_dataframe(
             X.columns = cols
         return X
     return pd.DataFrame(X, index=index, columns=cols)
+    # [exp-001]
 
 # -----------------------------------------------------------------------------
 # Column inference & partitioning
@@ -82,6 +87,7 @@ def infer_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     num = df.select_dtypes(include=[np.number]).columns.tolist()
     cat = df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
     return num, cat
+    # [exp-001]
 
 infer_column_types = infer_columns
 
@@ -90,12 +96,14 @@ def _partition_all_nan(df: pd.DataFrame, cols: Sequence[str]) -> Tuple[List[str]
     for c in cols:
         (some if df[c].notna().any() else all_nan).append(c)
     return some, all_nan
+    # [exp-001]
 
 def _make_ohe() -> OneHotEncoder:
     try:
         return OneHotEncoder(handle_unknown="ignore", sparse_output=True)
     except TypeError:  # sklearn < 1.2
         return OneHotEncoder(handle_unknown="ignore", sparse=True)  # type: ignore[call-arg]
+    # [exp-001]
 
 # -----------------------------------------------------------------------------
 # Build / Fit / Transform
@@ -200,6 +208,7 @@ def fit_preprocessor(
     setattr(ct, "_num_cols", list(numeric_cols))
     setattr(ct, "_cat_cols", list(categorical_cols))
     return ct
+    # [exp-001]
 
 def _feature_names_after_ohe(ct: ColumnTransformer) -> List[str]:
     try:

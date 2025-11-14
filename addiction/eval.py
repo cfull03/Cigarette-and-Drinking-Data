@@ -1,4 +1,5 @@
 # filepath: addiction/eval.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 import json
@@ -43,6 +44,7 @@ def _to_dense64(X: Any) -> npt.NDArray[np.float64]:
     arr: np.ndarray = X.toarray() if _sp.issparse(X) else np.asarray(X)
     arr64: np.ndarray = arr.astype(np.float64, copy=False)
     return cast(npt.NDArray[np.float64], arr64)
+    # [exp-001]
 
 def _to01(y: Any) -> npt.NDArray[np.int_]:
     arr: np.ndarray = np.asarray(y)
@@ -54,6 +56,7 @@ def _to01(y: Any) -> npt.NDArray[np.int_]:
         out = arr.astype(np.int_, copy=False)
         return cast(npt.NDArray[np.int_], out)
     raise ValueError(f"Labels must be boolean or 0/1. Got uniques={u}")
+    # [exp-001]
 
 def _assert_has_target(df: pd.DataFrame, target: str) -> None:
     if target not in df.columns:
@@ -63,12 +66,14 @@ def _assert_has_target(df: pd.DataFrame, target: str) -> None:
             f"Eval expects the FEATURES file (with target), not a preprocessed X-only file.\n"
             f"Columns preview: [{cols_preview}{'...' if df.shape[1] > 12 else ''}]"
         )
+    # [exp-001]
 
 def _pos_class_index(model: Any) -> int:
     if hasattr(model, "classes_"):
         classes = list(model.classes_)
         return classes.index(1) if 1 in classes else (len(classes) - 1)
     return 1
+    # [exp-001]
 
 def _extract_feature_names(
     X_enc: Any, *, preprocessor_path: Optional[Path]
@@ -165,6 +170,7 @@ def evaluate(model: Any, X_test: Any, y_test: Any) -> Dict[str, object]:
         "confusion_matrix": cm,
         "n_samples": int(y01.shape[0]),
     }
+    # [exp-001]
 
 def save_metrics(metrics: Dict[str, object], path: Path | str) -> Path:
     out = Path(path).resolve()
@@ -173,6 +179,7 @@ def save_metrics(metrics: Dict[str, object], path: Path | str) -> Path:
         json.dump(metrics, f, indent=2)
     logger.success(f"Saved metrics → {out}")
     return out
+    # [exp-001]
 
 def load_metrics(path: Path | str) -> Dict[str, object]:
     p = Path(path).resolve()
@@ -182,6 +189,7 @@ def load_metrics(path: Path | str) -> Dict[str, object]:
         data: Dict[str, object] = json.load(f)
     logger.info(f"Loaded metrics from {p}")
     return data
+    # [exp-001]
 
 # ---------- single subcommand named "main" ----------
 @app.command()
@@ -253,6 +261,7 @@ def main(
             logger.warning(f"Skipping feature importances due to error: {e}")
 
     logger.success("Done.")
+    # [exp-001]
 
 if __name__ == "__main__":
     app()

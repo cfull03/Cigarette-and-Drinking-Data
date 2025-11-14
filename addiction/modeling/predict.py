@@ -1,4 +1,5 @@
-# filepath: addiction/predict.py
+# filepath: addiction/modeling/predict.py
+# [exp-001] - Contains methods modified/added in exp/001-smoking-trends-cf
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +30,7 @@ def _to_dense64(X: pd.DataFrame) -> np.ndarray:
     if hasattr(arr, "toarray"):  # sparse
         arr = arr.toarray()
     return np.asarray(arr, dtype=np.float64)
+    # [exp-001]
 
 
 def _maybe_drop_target(df: pd.DataFrame, target: Optional[str]) -> pd.DataFrame:
@@ -36,6 +38,7 @@ def _maybe_drop_target(df: pd.DataFrame, target: Optional[str]) -> pd.DataFrame:
     if target and target in df.columns:
         return df.drop(columns=[target])
     return df
+    # [exp-001]
 
 
 def _maybe_apply_preprocessor(df: pd.DataFrame, preprocessor_path: Optional[Path]) -> pd.DataFrame:
@@ -48,6 +51,7 @@ def _maybe_apply_preprocessor(df: pd.DataFrame, preprocessor_path: Optional[Path
         ct = load_preprocessor(preprocessor_path)
         return transform_df(df, ct)
     return df
+    # [exp-001]
 
 
 def predict_df(
@@ -85,6 +89,7 @@ def predict_df(
     else:
         out.insert(0, "row_id", np.arange(len(out), dtype=int))
     return out
+    # [exp-001]
 
 
 def predict_file(
@@ -119,6 +124,7 @@ def predict_file(
     with pd.option_context("display.max_rows", 5, "display.width", 120):
         logger.info(f"\n{out.head()}")
     return output_csv
+    # [exp-001]
 
 
 @app.command(name="main")
@@ -157,6 +163,7 @@ def main(
         target=target,
         proba=proba,
     )
+    # [exp-001]
 
 
 if __name__ == "__main__":
